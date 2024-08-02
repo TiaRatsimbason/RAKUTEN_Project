@@ -1,3 +1,6 @@
+#deep learning models
+*.h5
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -87,3 +90,9 @@ target/
 
 # Mypy cache
 .mypy_cache/
+
+# Log files
+/logs/
+
+# Artifacts
+# /models/
