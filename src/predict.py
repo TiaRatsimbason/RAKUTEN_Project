@@ -1,4 +1,4 @@
-from features.build_features import TextPreprocessor, ImagePreprocessor
+from src.features.build_features import TextPreprocessor, ImagePreprocessor
 import tensorflow as tf
 from tensorflow.keras.applications.vgg16 import preprocess_input
 from tensorflow.keras.preprocessing.image import img_to_array, load_img
@@ -38,7 +38,7 @@ class Predict:
 
         # Prétraiter les images
         target_size = (224, 224, 3)
-        images = df["image_path"].apply(lambda x: self.preprocess_image(f"{image_path_base}/{x}", target_size))
+        images = df["image_path"].apply(lambda x: self.preprocess_image(x, target_size))
         images = tf.convert_to_tensor(images.tolist(), dtype=tf.float32)
 
         # Faire les prédictions avec les modèles LSTM et VGG16
