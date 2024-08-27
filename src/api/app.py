@@ -107,7 +107,7 @@ $response
 
 """
 
-# Pour mettre à jour les utilisateurs:
+# Pour mettre à jour un utilisateur:
 
 """
 # Définir les en-têtes avec le token JWT obtenu lors de l'authentification
