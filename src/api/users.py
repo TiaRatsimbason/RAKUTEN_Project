@@ -2,10 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime, timedelta
 from typing import Optional
 from pydantic import BaseModel
+import json
+import os
 
 # Configuration de la clé secrète et des paramètres JWT
 SECRET_KEY = "your_secret_key"
@@ -21,10 +22,39 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # Schéma OAuth2 pour FastAPI
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-# Configuration MongoDB
-client = AsyncIOMotorClient("mongodb://localhost:27017")
-db = client.api_users
-users_collection = db.get_collection("users")
+# Fonction pour détecter le chemin Google Drive
+def detect_google_drive_path():
+    drives = [f"{d}:" for d in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if os.path.exists(f"{d}:")]
+    google_drive_path = None
+    for drive in drives:
+        if os.path.exists(os.path.join(drive, "Mon Drive")):
+            google_drive_path = os.path.join(drive, "Mon Drive")
+            break
+    
+    if google_drive_path is None:
+        raise Exception("Google Drive not found on the system.")
+    
+    return google_drive_path
+
+# Définir le chemin vers la base de données utilisateurs
+google_drive_path = detect_google_drive_path()
+USER_DB_PATH = os.path.join(google_drive_path, "bdd-users", "users.json")
+
+# Charger les utilisateurs depuis Google Drive
+def load_users():
+    if os.path.exists(USER_DB_PATH):
+        with open(USER_DB_PATH, "r") as f:
+            return json.load(f)
+    return {}
+
+# Sauvegarder les utilisateurs sur Google Drive
+def save_users(users):
+    os.makedirs(os.path.dirname(USER_DB_PATH), exist_ok=True)
+    with open(USER_DB_PATH, "w") as f:
+        json.dump(users, f)
+
+# Charger la base de données des utilisateurs en mémoire
+users_db = load_users()
 
 # Modèle pour les utilisateurs
 class User(BaseModel):
@@ -68,8 +98,8 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return encoded_jwt
 
 # Fonction pour authentifier un utilisateur
-async def authenticate_user(username: str, password: str):
-    user = await users_collection.find_one({"username": username})
+def authenticate_user(username: str, password: str):
+    user = users_db.get(username)
     if not user or not verify_password(password, user["hashed_password"]):
         return False
     return user
@@ -77,18 +107,18 @@ async def authenticate_user(username: str, password: str):
 # Route pour créer un utilisateur (inscription)
 @router.post("/register/", response_model=User)
 async def create_user(user: UserCreate):
-    existing_user = await users_collection.find_one({"username": user.username})
-    if existing_user:
+    if user.username in users_db:
         raise HTTPException(status_code=400, detail="Username already exists")
     hashed_password = get_password_hash(user.password)
     user_dict = {"username": user.username, "hashed_password": hashed_password, "role": user.role}
-    await users_collection.insert_one(user_dict)
+    users_db[user.username] = user_dict
+    save_users(users_db)
     return user_dict
 
 # Route pour obtenir un token (connexion)
 @router.post("/token", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
-    user = await authenticate_user(form_data.username, form_data.password)
+    user = authenticate_user(form_data.username, form_data.password)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -114,7 +144,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         token_data = TokenData(username=username)
     except JWTError:
         raise credentials_exception
-    user = await users_collection.find_one({"username": token_data.username})
+    user = users_db.get(token_data.username)
     if user is None:
         raise credentials_exception
     return user
@@ -126,22 +156,19 @@ async def get_current_active_user(current_user: User = Depends(get_current_user)
 # Route pour mettre à jour les informations d'un utilisateur
 @router.put("/update/", response_model=User)
 async def update_user(user_update: UserUpdate, current_user: User = Depends(get_current_active_user)):
-    update_data = {}
-
+    user = users_db.get(current_user["username"])
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
     if user_update.password:
-        update_data["hashed_password"] = get_password_hash(user_update.password)
+        user["hashed_password"] = get_password_hash(user_update.password)
     if user_update.role:
-        update_data["role"] = user_update.role
+        user["role"] = user_update.role
+    
+    users_db[current_user["username"]] = user
+    save_users(users_db)
+    return user
 
-    if not update_data:
-        raise HTTPException(status_code=400, detail="No data provided to update")
-
-    result = await users_collection.update_one({"username": current_user["username"]}, {"$set": update_data})
-
-    if result.modified_count == 0:
-        raise HTTPException(status_code=404, detail="User not found or no changes made")
-
-    updated_user = await users_collection.find_one({"username": current_user["username"]})
-    return updated_user
 
     
