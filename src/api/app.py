@@ -108,10 +108,17 @@ async def predict(
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+    
 
+# Pour executer l'API:
+"""
+uvicorn src.api.app:app --reload
+"""
 
-
-
+# Pour charger les données en local:
+"""
+curl -X POST "http://localhost:8000/setup-data/"
+"""
     
 
 # Pour enregistrer un utilisateur:  
