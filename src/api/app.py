@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Depends, UploadFile, File, HTTPException, Response
-from src.api.users import router as users_router, get_current_active_user
+from src.api.users import router as users_router, get_current_active_user, get_current_admin_user
 import pandas as pd
 from src.predict import Predict, load_predictor
 import shutil
@@ -79,6 +79,17 @@ async def setup_data():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error in downloading or copying data: {e}")
 
+@app.post("/train-model/")
+async def train_model(current_user: dict = Depends(get_current_admin_user)):
+    try:
+        # Exécuter le script main.py pour entraîner le modèle
+        subprocess.run(["python", "src/main.py"], check=True)
+        return {"message": "Model training completed successfully."}
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(status_code=500, detail=f"Error in training model: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An error occurred during model training: {e}")
+
 @app.post("/predict/")
 async def predict(
     file: UploadFile = File(...),
@@ -108,6 +119,8 @@ async def predict(
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
     
 
 # Pour executer l'API:
@@ -160,6 +173,12 @@ $token = $response.access_token
 
 """
 
+# Pour entraîner le model:
+
+"""
+curl -X POST "http://localhost:8000/train-model/" -H "Authorization: Bearer $token"
+
+"""
 
 # Pour faire une requête à l'api:
 
