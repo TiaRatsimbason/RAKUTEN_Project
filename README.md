@@ -143,14 +143,14 @@ echo "Token: $token"
 
 """
 
-## Pour entraîner le model (token d'authentification avec rôle admin nécéssaire):
+## Pour entraîner le model:
 
 """
 curl -X POST "http://localhost:8000/train-model/" -H "Authorization: Bearer $token"
 
 """
 
-## Pour faire une requête à l'api (token d'authentification nécéssaire):
+## Pour faire une requête à l'api:
 
 """
 headers="Authorization: Bearer $token"

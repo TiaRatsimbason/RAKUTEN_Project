@@ -119,3 +119,110 @@ async def predict(
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+    
+
+# Pour executer l'API:
+"""
+uvicorn src.api.app:app --reload
+"""
+
+# Pour charger les données en local:
+"""
+curl -X POST "http://localhost:8000/setup-data/"
+"""
+    
+
+# Pour enregistrer un utilisateur:  
+"""
+$headers = @{
+    "Content-Type" = "application/json"
+}
+
+$body = @{
+    "username" = "Tia"
+    "password" = "Tia@7777"
+    "role" = "user"
+} | ConvertTo-Json
+
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/users/register/" `
+                  -Method POST `
+                  -Headers $headers `
+                  -Body $body
+
+
+"""
+
+
+# Pour avoir l'access_token: 
+
+"""
+$headers = @{
+    "Content-Type" = "application/x-www-form-urlencoded"
+}
+
+$body = "username=Tia&password=Tia@7777"
+
+$response = Invoke-RestMethod -Uri "http://localhost:8000/users/token" `
+                              -Method POST `
+                              -Headers $headers `
+                              -Body $body
+
+$token = $response.access_token
+
+"""
+
+# Pour entraîner le model:
+
+"""
+curl -X POST "http://localhost:8000/train-model/" -H "Authorization: Bearer $token"
+
+"""
+
+# Pour faire une requête à l'api:
+
+"""
+$headers = @{
+    "Authorization" = "Bearer $token"
+    "accept" = "application/json"
+}
+
+$form = @{
+    "file" = Get-Item "C:/Users/Tia/Documents/datascientest_tia/cours datascientest/MLOPS/Projet/juin24cmlops_rakuten_2/data/preprocessed/X_test_update.csv"
+    "images_folder" = "C:/Users/Tia/Documents/datascientest_tia/cours datascientest/MLOPS/Projet/juin24cmlops_rakuten_2/data/preprocessed/image_test"
+}
+
+$response = Invoke-RestMethod -Uri "http://localhost:8000/predict/" `
+                              -Method POST `
+                              -Headers $headers `
+                              -Form $form
+
+$response
+
+"""
+
+# Pour mettre à jour un utilisateur:
+
+"""
+# Définir les en-têtes avec le token JWT obtenu lors de l'authentification
+$headers = @{
+    "Authorization" = "Bearer $token"
+    "Content-Type" = "application/json"
+}
+
+# Définir le corps de la requête pour mettre à jour le rôle
+$body = @{
+    "role" = "admin"
+} | ConvertTo-Json
+
+# Envoyer la requête PUT pour mettre à jour l'utilisateur
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/users/update/" `
+                  -Method PUT `
+                  -Headers $headers `
+                  -Body $body
+
+
+"""
+
+
