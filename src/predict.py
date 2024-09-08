@@ -1,3 +1,4 @@
+from flask import Blueprint, request, jsonify
 from src.features.build_features import TextPreprocessor, ImagePreprocessor
 import tensorflow as tf
 from tensorflow.keras.applications.vgg16 import preprocess_input
@@ -7,7 +8,9 @@ import numpy as np
 import json
 from tensorflow import keras
 import pandas as pd
-import argparse
+
+# Définition du blueprint pour les prédictions
+predict_blueprint = Blueprint('predict', __name__)
 
 class Predict:
     def __init__(self, tokenizer, lstm, vgg16, best_weights, mapper):
@@ -71,23 +74,24 @@ def load_predictor():
 
     return Predict(tokenizer, lstm, vgg16, best_weights, mapper)
 
-def main():
-    parser = argparse.ArgumentParser(description="Input data")
-    
-    parser.add_argument("--dataset_path", default="data/preprocessed/X_train_update.csv", type=str, help="File path for the input CSV file.")
-    parser.add_argument("--images_path", default="data/preprocessed/image_train", type=str, help="Base path for the images.")
-    args = parser.parse_args()
+# Route pour l'API de prédiction
+@predict_blueprint.route('/predict', methods=['POST'])
+def predict_route():
+    try:
+        # Charger le prédicteur
+        predictor = load_predictor()
 
-    # Charger le prédicteur
-    predictor = load_predictor()
+        # Charger le fichier de données fourni par la requête
+        file = request.files['file']
+        df = pd.read_csv(file)
 
-    # Lire le fichier CSV et effectuer la prédiction
-    df = pd.read_csv(args.dataset_path)
-    predictions = predictor.predict(df, args.images_path)
+        # Chemin de base des images (à adapter selon la structure du projet)
+        image_path_base = 'data/preprocessed/image_train'
 
-    # Sauvegarde des prédictions
-    with open("data/preprocessed/predictions.json", "w", encoding="utf-8") as json_file:
-        json.dump(predictions, json_file, indent=2)
+        # Faire la prédiction
+        predictions = predictor.predict(df, image_path_base)
 
-if __name__ == "__main__":
-    main()
+        # Renvoyer les prédictions en JSON
+        return jsonify({"predictions": predictions}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
