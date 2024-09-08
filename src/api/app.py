@@ -1,124 +1,121 @@
-from flask import Flask, jsonify
-from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity
-from .auth import auth_blueprint  
-from predict import predict_blueprint  
-from concurrent.futures import ThreadPoolExecutor
-import logging
+from fastapi import FastAPI, Depends, UploadFile, File, HTTPException, Response
+from src.api.users import router as users_router, get_current_active_user, get_current_admin_user
+import pandas as pd
+from src.predict import Predict, load_predictor
+import shutil
+import subprocess
 import os
-from subprocess import run, CalledProcessError
-import time
+import json
+from tqdm import tqdm
 
-# Configuration du logging
-logging.basicConfig(filename='logs/training.log', level=logging.INFO, format='%(asctime)s - %(message)s')
+app = FastAPI()
 
-# Créer un pool de threads pour exécuter l'entraînement en parallèle
-executor = ThreadPoolExecutor(2)
+# Charger le prédicteur au démarrage de l'application
+predictor = load_predictor()
 
-app = Flask(__name__)
+# Inclure l'API des utilisateurs
+app.include_router(users_router, prefix="/users", tags=["users"])
 
-# Configuration de JWT
-app.config["JWT_SECRET_KEY"] = "your_secret_key"  # !!! A modifier au besoin !!!
-jwt = JWTManager(app)
+# Fonction pour créer les dossiers requis
+def create_directory_structure(base_path="data"):
+    raw_path = os.path.join(base_path, "raw")
+    preprocessed_path = os.path.join(base_path, "preprocessed")
 
-# Enregistrement des Blueprints
-app.register_blueprint(auth_blueprint, url_prefix="/auth")  # Routes pour l'authentification
-app.register_blueprint(predict_blueprint, url_prefix="/api")  # Routes pour les prédictions
+    # Créer les dossiers si nécessaire
+    os.makedirs(os.path.join(raw_path, "image_train"), exist_ok=True)
+    os.makedirs(os.path.join(raw_path, "image_test"), exist_ok=True)
+    os.makedirs(os.path.join(preprocessed_path, "image_train"), exist_ok=True)
+    os.makedirs(os.path.join(preprocessed_path, "image_test"), exist_ok=True)
 
-# Variable pour suivre l'état de l'entraînement
-training_in_progress = False
-
-# Fonction pour vérifier si l'utilisateur est admin
-def is_admin():
-    current_user = get_jwt_identity()
-    return current_user["role"] == "admin"
-
-# Fonction pour vérifier la présence des modèles
-def check_models():
-    return os.path.exists("models/best_lstm_model.h5") and os.path.exists("models/best_vgg16_model.h5")
-
-# Fonction pour installer les données et entraîner les modèles
-def setup_data_and_train():
+# Fonction pour copier les fichiers et dossiers avec des barres de progression en temps réel
+def copy_files_and_folders_from_drive(drive_path):
     try:
-        logging.info("Lancement de l'installation des données et de l'entraînement.")
-        start_time = time.time()  
-
-        # Exécuter les scripts d'installation et d'entraînement
-        run(["python", "src/data/import_raw_data.py"], check=True)
-        logging.info(f"Installation des données terminée en {time.time() - start_time:.2f} secondes")
-
-        start_time = time.time()  # Recommencer le chronomètre pour l'entraînement
-        run(["python", "src/main.py"], check=True)
-        logging.info(f"Entraînement des modèles terminé en {time.time() - start_time:.2f} secondes")
-
-    except CalledProcessError as e:
-        logging.error(f"Erreur pendant la configuration des données ou l'entraînement : {str(e)}")
-        raise e
-
-# Avant chaque requête, vérifier si les modèles sont présents ou lancer l'entraînement
-@app.before_request
-def check_and_prepare():
-    if not check_models():
-        logging.info("Les modèles n'existent pas. Lancement de l'installation des données et de l'entraînement.")
-        setup_data_and_train()
-
-# Fonction pour l'entraînement des modèles
-def train_model():
-    global training_in_progress
-    training_in_progress = True
-    logging.info("Début de l'entraînement du modèle LSTM et VGG...")  # Log de début d'entraînement
-    
-    try:
-        start_time = time.time()
-
-        # Entraînement du modèle LSTM
-        logging.info("Début de l'entraînement du modèle LSTM...")
-        # Appel de la fonction d'entraînement du modèle LSTM
-        # lstm_model.train(X_train, y_train, X_val, y_val)
-        time.sleep(10)  # Simule l'entraînement LSTM
-        logging.info(f"Modèle LSTM terminé en {time.time() - start_time:.2f} secondes")
-
-        start_time = time.time()
-
-        # Entraînement du modèle VGG
-        logging.info("Début de l'entraînement du modèle VGG...")
-        # Appel de la fonction d'entraînement du modèle VGG
-        # vgg_model.train(X_train, y_train, X_val, y_val)
-        time.sleep(10)  # Simule l'entraînement VGG
-        logging.info(f"Modèle VGG terminé en {time.time() - start_time:.2f} secondes")
+        data_path = os.path.join(drive_path, "molps_rakuten_data")
+        for folder in ['image_train', 'image_test']:
+            source = os.path.join(data_path, folder)
+            dest = f"data/raw/{folder}"
+            
+            # Obtenir la liste des fichiers à copier
+            files_to_copy = [f for f in os.listdir(source) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp'))]
+            
+            # Créer une barre de progression
+            with tqdm(total=len(files_to_copy), desc=f"Copying {folder}", unit="file") as pbar:
+                for filename in files_to_copy:
+                    shutil.copy(os.path.join(source, filename), dest)
+                    pbar.update(1)
 
     except Exception as e:
-        logging.error(f"Erreur pendant l'entraînement : {str(e)}")  # Log des erreurs
-    finally:
-        training_in_progress = False
-        logging.info("Fin de l'entraînement.")  # Log de fin d'entraînement
+        raise HTTPException(status_code=500, detail=f"Error in copying image data: {e}")
 
-# Route pour démarrer l'entraînement
-@app.route('/train', methods=['POST'])
-@jwt_required()  # Protection par JWT
-def train():
-    if not is_admin():
-        return jsonify({"message": "Accès non autorisé. Administrateurs uniquement."}), 403
+@app.post("/setup-data/")
+async def setup_data():
+    try:
+        # Détecter le lecteur Google Drive
+        drives = [f"{d}:" for d in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if os.path.exists(f"{d}:")]
+        google_drive_path = None
+        for drive in drives:
+            if os.path.exists(os.path.join(drive, "Mon Drive")):
+                google_drive_path = os.path.join(drive, "Mon Drive")
+                break
+        
+        if google_drive_path is None:
+            raise HTTPException(status_code=500, detail="Google Drive not found on the system.")
+
+        # Créer les répertoires de données
+        create_directory_structure()
+
+        # Copier les fichiers depuis Google Drive
+        copy_files_and_folders_from_drive(google_drive_path)
+
+        # Exécuter le script pour importer les données
+        subprocess.run(["python", "src/data/import_raw_data.py"], check=True)
+
+        # Exécuter le script pour créer le dataset
+        subprocess.run(["python", "src/data/make_dataset.py", "data/raw", "data/preprocessed"], check=True)
+
+        return {"message": "Data setup completed successfully."}
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(status_code=500, detail=f"Error in setting up data: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error in downloading or copying data: {e}")
+
+@app.post("/train-model/")
+async def train_model(current_user: dict = Depends(get_current_admin_user)):
+    try:
+        # Exécuter le script main.py pour entraîner le modèle
+        subprocess.run(["python", "src/main.py"], check=True)
+        return {"message": "Model training completed successfully."}
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(status_code=500, detail=f"Error in training model: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An error occurred during model training: {e}")
+
+@app.post("/predict/")
+async def predict(
+    file: UploadFile = File(...),
+    images_folder: str = "data/preprocessed/image_test",
+    current_user: dict = Depends(get_current_active_user),  # Protéger cette route avec l'authentification
+):
+    # Sauvegarder le fichier temporairement
+    with open("temp.csv", "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
     
-    if not training_in_progress:
-        executor.submit(train_model)  # Lance l'entraînement dans un thread séparé
-        return jsonify({"message": "L'entraînement est en cours."}), 202
-    else:
-        return jsonify({"message": "Un entraînement est déjà en cours."}), 409
+    # Lire le fichier CSV et le convertir en DataFrame
+    df = pd.read_csv("temp.csv")[:10]
+    
+    # Appel de la méthode de prédiction
+    predictions = predictor.predict(df, images_folder)
+    
+    # Sauvegarder les prédictions dans un fichier JSON dans le répertoire "data/preprocessed"
+    output_path = "data/preprocessed/predictions.json"
+    with open(output_path, "w") as json_file:
+        json.dump(predictions, json_file, indent=2)
+    
+    # Supprimer le fichier temporaire après utilisation
+    os.remove("temp.csv")
+    
+    return {"predictions": predictions}
 
-# Route pour vérifier le statut de l'entraînement
-@app.route('/train/status', methods=['GET'])
-@jwt_required()  # JWT requis pour l'accès
-def train_status():
-    if training_in_progress:
-        return jsonify({"status": "Entraînement en cours"}), 200
-    else:
-        return jsonify({"status": "Entraînement terminé"}), 200
-
-# Route d'accueil pour vérifier que l'API fonctionne
-@app.route("/")
-def home():
-    return jsonify({"message": "Bienvenue sur l'API de gestion de modèles et prédictions."})
-
-# Démarrage de l'application Flask
-if __name__ == '__main__':
-    app.run(debug=True, use_reloader=False)
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
