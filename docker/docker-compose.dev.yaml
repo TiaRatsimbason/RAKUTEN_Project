@@ -2,11 +2,11 @@ version: '3.8'
 
 services:
   mongo:
-    image: mongo:8.0.0
+    image: mongo:8.0.0-rc20-noble
     environment:
       - MONGODB_URI=mongodb://mongodb:27017/
-      - MONGODB_ROOT_USERNAME=admin
-      - MONGODB_ROOT_PASSWORD=motdepasseadmin
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=motdepasseadmin
     ports:
       - "27017:27017"
     volumes:
