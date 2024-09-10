@@ -1,8 +1,8 @@
-**Commandes pour lancer l'API**
+## **Commandes pour lancer l'API**
 
-## Commandes Bash (il faut un terminal avec commandes bash)##
+## Commandes Bash (il faut un terminal avec commandes bash)
 
-## Pour executer l'API:##
+## Pour executer l'API:
 
 Si l'environnement n'a pas été créé, cette commande lancera la création de celui-ci, puis l'installation des dépendances contenues dans le fichier requirements.txt dans cet environnement. Elle vérifiera également si le répertoire Data, contenant les dossiers Raw et Preprocessed, existe. Sinon, elle procédera à leur création ainsi qu'au téléchargement des données. Ensuite, elle entraînera le modèle, mais récupérera les meilleurs modèles depuis le drive. Enfin, elle lancera l'API.
 
@@ -11,14 +11,14 @@ Si l'environnement n'a pas été créé, cette commande lancera la création de 
 
 ```
 
-## Pour charger les données en local (si elles ont été mises à jour) :##
+## Pour charger les données en local (si elles ont été mises à jour) :
 
 ```
 curl -X POST "http://localhost:8000/setup-data/"
 
 ```
 
-## Pour enregistrer un utilisateur:##
+## Pour enregistrer un utilisateur:
 
 ```
 headers="Content-Type: application/json"
@@ -69,7 +69,7 @@ curl -X POST "http://localhost:8000/train-model/" -H "Authorization: Bearer $tok
 
 ```
 
-## Pour faire une requête à l'api:##
+## Pour faire une requête à l'api:
 
 ```
 headers="Authorization: Bearer $token"
@@ -86,7 +86,7 @@ echo "Response: $response"
 
 ```
 
-## Pour mettre à jour un utilisateur:##
+## Pour mettre à jour un utilisateur:
 
 ```
 headers="Authorization: Bearer $token"
