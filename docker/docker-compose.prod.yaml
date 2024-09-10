@@ -10,7 +10,7 @@ services:
     ports:
       - "27017:27017"
     volumes:
-      - mongo_database-dev:/data/db
+      - mongo_database-prod:/data/db
 
   api:
     build:
@@ -25,4 +25,4 @@ services:
         condition: service_completed_successfully
 
 volumes:
-  mongo_database-dev:
+  mongo_database-prod:
