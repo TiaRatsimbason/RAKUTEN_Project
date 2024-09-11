@@ -1,5 +1,9 @@
 from fastapi import FastAPI, Depends, UploadFile, File, HTTPException, Response
-from src.api.users import router as users_router, get_current_active_user, get_current_admin_user
+from src.api.users import (
+    router as users_router,
+    get_current_active_user,
+    get_current_admin_user,
+)
 import pandas as pd
 from src.predict import Predict, load_predictor
 import shutil
@@ -34,15 +38,21 @@ def create_directory_structure(base_path="data"):
 def copy_files_and_folders_from_drive(drive_path):
     try:
         data_path = os.path.join(drive_path, "molps_rakuten_data")
-        for folder in ['image_train', 'image_test']:
+        for folder in ["image_train", "image_test"]:
             source = os.path.join(data_path, folder)
             dest = f"data/raw/{folder}"
 
             # Obtenir la liste des fichiers à copier
-            files_to_copy = [f for f in os.listdir(source) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp'))]
+            files_to_copy = [
+                f
+                for f in os.listdir(source)
+                if f.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".bmp"))
+            ]
 
             # Créer une barre de progression
-            with tqdm(total=len(files_to_copy), desc=f"Copying {folder}", unit="file") as pbar:
+            with tqdm(
+                total=len(files_to_copy), desc=f"Copying {folder}", unit="file"
+            ) as pbar:
                 for filename in files_to_copy:
                     shutil.copy(os.path.join(source, filename), dest)
                     pbar.update(1)
@@ -55,7 +65,9 @@ def copy_files_and_folders_from_drive(drive_path):
 async def setup_data():
     try:
         # Détecter le lecteur Google Drive
-        drives = [f"{d}:" for d in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if os.path.exists(f"{d}:")]
+        drives = [
+            f"{d}:" for d in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if os.path.exists(f"{d}:")
+        ]
         google_drive_path = None
         for drive in drives:
             if os.path.exists(os.path.join(drive, "Mon Drive")):
@@ -63,7 +75,9 @@ async def setup_data():
                 break
 
         if google_drive_path is None:
-            raise HTTPException(status_code=500, detail="Google Drive not found on the system.")
+            raise HTTPException(
+                status_code=500, detail="Google Drive not found on the system."
+            )
 
         # Créer les répertoires de données
         create_directory_structure()
@@ -75,13 +89,18 @@ async def setup_data():
         subprocess.run(["python", "src/data/import_raw_data.py"], check=True)
 
         # Exécuter le script pour créer le dataset
-        subprocess.run(["python", "src/data/make_dataset.py", "data/raw", "data/preprocessed"], check=True)
+        subprocess.run(
+            ["python", "src/data/make_dataset.py", "data/raw", "data/preprocessed"],
+            check=True,
+        )
 
         return {"message": "Data setup completed successfully."}
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Error in setting up data: {e}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error in downloading or copying data: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Error in downloading or copying data: {e}"
+        )
 
 
 @app.post("/train-model/")
@@ -93,14 +112,18 @@ async def train_model(current_user: dict = Depends(get_current_admin_user)):
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Error in training model: {e}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An error occurred during model training: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"An error occurred during model training: {e}"
+        )
 
 
 @app.post("/predict/")
 async def predict(
     file: UploadFile = File(...),
     images_folder: str = "data/preprocessed/image_test",
-    current_user: dict = Depends(get_current_active_user),  # Protéger cette route avec l'authentification
+    current_user: dict = Depends(
+        get_current_active_user
+    ),  # Protéger cette route avec l'authentification
 ):
     try:
         # Sauvegarder le fichier temporairement
@@ -124,9 +147,12 @@ async def predict(
         return {"predictions": predictions}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An error occurred during prediction: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"An error occurred during prediction: {e}"
+        )
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

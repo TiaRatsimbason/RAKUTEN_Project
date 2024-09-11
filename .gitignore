@@ -96,3 +96,6 @@ target/
 
 # Artifacts
 # /models/
+
+# Continue VS Code extension
+.continueignore
