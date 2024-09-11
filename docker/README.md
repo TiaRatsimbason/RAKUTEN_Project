@@ -4,20 +4,20 @@
 
 # Exécuter l'environnement de développement
 
-`cd docker` <-- se déplacer dans le dossier docker
+`cd docker/docker-compose` <-- se déplacer dans le dossier docker-compose
 
 `docker-compose -f docker-compose.dev.yaml up --build` <-- lancer le docker-compose de l'environnement de développement
 
 # Exécuter l'environnement de staging
 
-`cd docker` <-- se déplacer dans le dossier docker
+`cd docker/docker-compose` <-- se déplacer dans le dossier docker-compose
 
 `docker-compose -f docker-compose.staging.yaml up --build` <-- lancer le docker-compose de l'environnement de staging
 
 
 # Exécuter l'environnement de test
 
-`cd docker` <-- se déplacer dans le dossier docker
+`cd docker/docker-compose` <-- se déplacer dans le dossier docker-compose
 
 `docker-compose -f docker-compose.testapp.yaml up --build` <-- lancer le docker-compose de l'environnement de test
 
@@ -26,6 +26,6 @@
 
 # Exécuter l'environnement de production
 
-`cd docker` <-- se déplacer dans le dossier docker
+`cd docker/docker-compose` <-- se déplacer dans le dossier docker-compose
 
 `docker-compose -f docker-compose.prod.yaml up --build` <-- lancer le docker-compose de l'environnement de production
