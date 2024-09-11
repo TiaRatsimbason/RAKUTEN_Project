@@ -5,7 +5,7 @@ asttokens==2.2.1
 astunparse==1.6.3
 backcall==0.2.0
 backports.functools-lru-cache==1.6.5
-bcrypt @ file:///D:/bld/bcrypt_1724960441930/work
+bcrypt
 beautifulsoup4==4.12.2
 blinker==1.8.2
 cachetools==5.3.1
