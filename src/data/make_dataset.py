@@ -4,13 +4,17 @@ import logging
 from pathlib import Path
 from dotenv import find_dotenv, load_dotenv
 import shutil
-from check_structure import check_existing_folder
+import os
 
 
 @click.command()
 @click.argument('input_filepath', type=click.Path(exists=True))
 @click.argument('output_filepath', type=click.Path())
 def main(input_filepath, output_filepath):
+    # Vérifiez si le dossier de destination existe déjà
+    if os.path.exists(output_filepath):
+        # Supprimez-le s'il existe
+        shutil.rmtree(output_filepath)
 
     # Utilisez shutil.copytree pour copier récursivement le contenu du dossier source vers le dossier de destination
     # Si le dossier de destination existe déjà, il sera remplacé.
