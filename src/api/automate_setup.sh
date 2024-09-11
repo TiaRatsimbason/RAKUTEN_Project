@@ -44,6 +44,24 @@ else
     fi
 fi
 
+# Vérifier les dépendances manquantes
+echo "Checking for missing dependencies..."
+python -m pip install --upgrade pip  # Mettre à jour pip avant de vérifier les dépendances manquantes
+
+MISSING_DEPENDENCIES=$(pip check 2>&1 | grep -i "No module named" | awk '{print $5}')
+if [ ! -z "$MISSING_DEPENDENCIES" ]; then
+    for dep in $MISSING_DEPENDENCIES; do
+        echo "Installing missing dependency: $dep"
+        pip install $dep
+        if [ $? -ne 0 ]; then
+            echo "Failed to install dependency: $dep. Exiting."
+            exit 1
+        fi
+    done
+else
+    echo "All dependencies are satisfied."
+fi
+
 # Étape 1 : Préparer les données
 if [ -d "data/raw" ] && [ -d "data/preprocessed" ]; then
     echo "Data directories already exist. Skipping data setup."
