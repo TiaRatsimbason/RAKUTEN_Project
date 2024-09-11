@@ -15,6 +15,7 @@ cycler==0.11.0
 debugpy==1.6.7
 decorator==5.1.1
 executing==1.2.0
+fastapi
 flatbuffers==23.5.26
 fonttools==4.42.0
 gast==0.4.0
@@ -48,6 +49,7 @@ opt-einsum==3.3.0
 packaging==23.1
 pandas==2.0.3
 parso==0.8.3
+passlib==1.7.4
 pickleshare==0.7.5
 Pillow==10.0.0
 pip==23.2.1
@@ -58,12 +60,14 @@ psutil==5.9.0
 pure-eval==0.2.2
 pyasn1==0.5.0
 pyasn1-modules==0.3.0
+pydantic
 Pygments==2.16.1
 pymongo==4.8.0
 pynndescent==0.5.10
 pyparsing==3.0.9
 python-dateutil==2.8.2
 python-dotenv==1.0.0
+python-jose==3.3.0
 pytz==2023.3
 pywin32==306.0; platform_system=="Windows"
 pyzmq==25.1.0
@@ -90,7 +94,7 @@ threadpoolctl==3.2.0
 tornado==6.3.2
 tqdm==4.65.1
 traitlets==5.9.0
-typing_extensions==4.5.0
+typing_extensions
 tzdata==2023.3
 urllib3==1.26.16
 wcwidth==0.2.6
