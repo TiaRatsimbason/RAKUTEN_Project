@@ -57,7 +57,10 @@ Once you have downloaded the github repo, open the anaconda powershell on the ro
 
 > `python -m pip install -U pip` <- Upgrade to the latest available version of pip
 
-> `pip install -r requirements.txt` <- It will install the required packages
+| Environnement Windows | Environnement MacOS ou Linux |
+|:----------------------|:-----------------------------|
+| `pip install -r requirements_win.txt` | `pip install -r requirements_linux_macos.txt` |
+| ↳ Installe les packages requis | ↳ Installe les packages requis |
 
 > `python src/data/import_raw_data.py` <- It will import the tabular data on data/raw/
 
