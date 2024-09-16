@@ -5,46 +5,38 @@ This project is a starting Pack for MLOps projects based on the subject "movie_r
 ## Project Organization
 
     ├── LICENSE
-    ├── README.md          <- The top-level README for developers using this project.
+    ├── README.md
     ├── data
-    │   ├── external       <- Data from third party sources -> the external data you want to make a prediction on
-    │   ├── preprocessed      <- The final, canonical data sets for modeling.
-    |   |  ├── image_train <- Where you put the images of the train set
-    |   |  ├── image_test <- Where you put the images of the predict set
-    |   |  ├── X_train_update.csv    <- The csv file with te columns designation, description, productid, imageid like in X_train_update.csv
-    |   |  ├── X_test_update.csv    <- The csv file with te columns designation, description, productid, imageid like in X_train_update.csv
-    │   └── raw            <- The original, immutable data dump.
-    |   |  ├── image_train <- Where you put the images of the train set
-    |   |  ├── image_test <- Where you put the images of the predict set
-    │
-    ├── logs               <- Logs from training and predicting
-    │
-    ├── models             <- Trained and serialized models, model predictions, or model summaries
-    │
-    ├── notebooks          <- Jupyter notebooks. Naming convention is a number (for ordering),
-    │                         the creator's initials, and a short `-` delimited description, e.g.
-    │                         `1.0-jqp-initial-data-exploration`.
-    │
-    ├── requirements.txt   <- The requirements file for reproducing the analysis environment, e.g.
-    │                         generated with `pip freeze > requirements.txt`
-    │
-    ├── src                <- Source code for use in this project.
-    │   ├── __init__.py    <- Makes src a Python module
-    │   ├── main.py        <- Scripts to train models
-    │   ├── predict.py     <- Scripts to use trained models to make prediction on the files put in ../data/preprocessed
-    │   │
-    │   ├── data           <- Scripts to download or generate data
-    │   │   ├── check_structure.py
-    │   │   ├── import_raw_data.py
-    │   │   └── make_dataset.py
-    │   │
-    │   ├── features       <- Scripts to turn raw data into features for modeling
-    │   │   └── build_features.py
-    │   │
-    │   ├── models
-    │   │   └── train_model.py
-    │   └── config         <- Describe the parameters used in train_model.py and predict_model.py
-
+    │   ├── external
+    │   ├── preprocessed
+    │   │  ├── image_train
+    │   │  └── image_test
+    │   └── raw
+    │      ├── image_train
+    │      └── image_test
+    ├── db
+    ├── docker
+    │   ├── docker-compose
+    │   └── dockerfile
+    ├── docs
+    ├── logs
+    │   ├── train
+    │   └── validation
+    ├── models
+    ├── notebooks
+    ├── requirements.txt
+    ├── src
+    │   ├── api
+    │   │   ├── root
+    │   │   └── utils
+    │   └── scripts
+    │       ├── data
+    │       ├── features
+    │       ├── models
+    │       └── visualization
+    └── tests
+        ├── integration
+        └── unit
 ---
 
 Once you have downloaded the github repo, open the anaconda powershell on the root of the project and follow those instructions :
