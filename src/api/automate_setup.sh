@@ -67,7 +67,7 @@ if [ -d "data/raw" ] && [ -d "data/preprocessed" ]; then
     echo "Data directories already exist. Skipping data setup."
 else
     echo "Setting up data..."
-    python src/data/setup_data_cloud.py
+    python src/scripts/data/setup_data_cloud.py
     if [ $? -ne 0 ]; then
         echo "Data setup failed. Exiting."
         exit 1
@@ -80,7 +80,7 @@ if [ -f "models/best_lstm_model.h5" ] && [ -f "models/best_vgg16_model.h5" ] && 
     echo "Models already exist. Skipping model training."
 else
     echo "Training model..."
-    python src/main.py
+    python src/scripts/main.py
     if [ $? -ne 0 ]; then
         echo "Model training failed. Exiting."
         exit 1

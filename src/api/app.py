@@ -5,7 +5,7 @@ from src.api.users import (
     get_current_admin_user,
 )
 import pandas as pd
-from src.predict import Predict, load_predictor
+from src.scripts.predict import Predict, load_predictor
 import shutil
 import subprocess
 import os
@@ -86,11 +86,16 @@ async def setup_data():
         copy_files_and_folders_from_drive(google_drive_path)
 
         # Exécuter le script pour importer les données
-        subprocess.run(["python", "src/data/import_raw_data.py"], check=True)
+        subprocess.run(["python", "src/scripts/data/import_raw_data.py"], check=True)
 
         # Exécuter le script pour créer le dataset
         subprocess.run(
-            ["python", "src/data/make_dataset.py", "data/raw", "data/preprocessed"],
+            [
+                "python",
+                "src/scripts/data/make_dataset.py",
+                "data/raw",
+                "data/preprocessed",
+            ],
             check=True,
         )
 
@@ -107,7 +112,7 @@ async def setup_data():
 async def train_model(current_user: dict = Depends(get_current_admin_user)):
     try:
         # Exécuter le script main.py pour entraîner le modèle
-        subprocess.run(["python", "src/main.py"], check=True)
+        subprocess.run(["python", "src/scripts/main.py"], check=True)
         return {"message": "Model training completed successfully."}
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Error in training model: {e}")
