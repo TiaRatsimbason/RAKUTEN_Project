@@ -1,26 +1,25 @@
-version: '3.8'
-
 services:
   mongo:
     image: mongo:8.0.0-rc20-noble
+    ports:
+      - "27017:27017"
     environment:
       - MONGODB_URI=mongodb://mongodb:27017/
       - MONGO_INITDB_ROOT_USERNAME=admin
       - MONGO_INITDB_ROOT_PASSWORD=motdepasseadmin
-    ports:
-      - "27017:27017"
 
   api:
     build:
       context: ../..
-      dockerfile: docker/dockerfile/Dockerfile.api
+      dockerfile: docker/dockerfile/api.Dockerfile
     ports:
       - "8000:8000"
     environment:
-      - MONGODB_URI=mongodb://mongodb:27017/
+      - MONGODB_URI=mongodb://admin:motdepasseadmin@mongo:27017/
+      - ENVIRONMENT=test
     depends_on:
       mongo:
-        condition: service_completed_successfully
+        condition: service_started
   
   test:
     build:
@@ -29,9 +28,9 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - MONGODB_URI=mongodb://mongodb:27017/
+      - MONGODB_URI=mongodb://admin:motdepasseadmin@mongo:27017/
     depends_on:
       mongo:
-        condition: service_completed_successfully
+        condition: service_started
       api:
-        condition: service_completed_successfully
+        condition: service_started
