@@ -7,6 +7,7 @@ import subprocess
 # Third-party library imports
 import pandas as pd
 from fastapi import APIRouter, File, HTTPException, UploadFile
+from sklearn.metrics import precision_score, recall_score, f1_score
 
 # Local/application-specific imports
 from scripts.predict import load_predictor
@@ -59,4 +60,52 @@ async def predict(
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"An error occurred during prediction: {e}"
+        )
+
+
+@router.post("/evaluate-model/")
+async def evaluate_model(n_samples: int = 1000):
+    try:
+        X_eval = pd.read_csv("data/preprocessed/X_eval_update.csv").sample(
+            n=n_samples, random_state=42
+        )
+        y_eval = pd.read_csv("data/preprocessed/Y_eval_update.csv").sample(
+            n=n_samples, random_state=42
+        )
+
+        if y_eval.shape[1] > 1:
+            y_eval = y_eval.iloc[:, 1]
+
+        # Charger le prédicteur au démarrage de l'application
+        predictor = load_predictor()
+
+        predictions = predictor.predict(X_eval, "data/preprocessed/image_eval")
+
+        with open("models/mapper.json", "r") as json_file:
+            mapper = json.load(json_file)
+
+        mapped_predictions = [mapper[str(pred)] for pred in predictions]
+
+        y_eval = y_eval.astype(str)
+        mapped_predictions = [str(pred) for pred in mapped_predictions]
+
+        precision = precision_score(
+            y_eval, mapped_predictions, average="macro", zero_division=0
+        )
+        recall = recall_score(
+            y_eval, mapped_predictions, average="macro", zero_division=0
+        )
+        f1 = f1_score(y_eval, mapped_predictions, average="macro", zero_division=0)
+
+        return {
+            "evaluation_report": {
+                "precision": precision,
+                "recall": recall,
+                "f1-score": f1,
+            }
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An error occurred during model evaluation: {e}"
         )
