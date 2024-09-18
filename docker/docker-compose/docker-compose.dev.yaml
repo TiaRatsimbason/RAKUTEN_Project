@@ -11,6 +11,7 @@ services:
       - mongo_database-dev:/data/db
 
   api:
+    image: rakuten-api:latest
     build:
       context: ../..
       dockerfile: docker/dockerfile/api.Dockerfile

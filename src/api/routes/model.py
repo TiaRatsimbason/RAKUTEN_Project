@@ -13,9 +13,6 @@ from scripts.predict import load_predictor
 
 router = APIRouter()
 
-# Charger le prédicteur au démarrage de l'application
-predictor = load_predictor()
-
 
 @router.post("/train-model/")
 async def train_model():
@@ -42,6 +39,9 @@ async def predict(
 
         # Lire le fichier CSV et le convertir en DataFrame
         df = pd.read_csv("temp.csv")[:10]
+
+        # Charger le prédicteur au démarrage de l'application
+        predictor = load_predictor()
 
         # Appel de la méthode de prédiction
         predictions = predictor.predict(df, images_folder)
