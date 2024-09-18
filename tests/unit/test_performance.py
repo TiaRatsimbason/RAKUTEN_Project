@@ -1,10 +1,10 @@
-import unittest
-import requests
 import time
+import requests
+from unittest import TestCase
 
 BASE_URL = "http://localhost:8000"
 
-class TestPerformance(unittest.TestCase):
+class TestPerformance(TestCase):
 
     def test_prediction_response_time(self):
         files = {'file': open('data/preprocessed/image_test/image_529140_product_923202.jpg', 'rb')}
