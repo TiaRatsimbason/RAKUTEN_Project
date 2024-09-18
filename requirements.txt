@@ -1,6 +1,0 @@
-fastapi
-motor==3.5.1
-pip
-pydantic==2.9.0
-pymongo==4.8.0
-uvicorn==0.30.6

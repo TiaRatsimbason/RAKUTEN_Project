@@ -1,7 +1,13 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from motor.motor_asyncio import AsyncIOMotorClient
+# Standard library imports
 import os
+
+# Third-party library imports
+from fastapi import FastAPI, HTTPException
+from motor.motor_asyncio import AsyncIOMotorClient
+from pydantic import BaseModel
+
+# Local/application-specific imports
+from routes import model
 
 app = FastAPI()
 
@@ -11,24 +17,14 @@ MONGODB_URI = os.getenv("MONGODB_URI")
 client = AsyncIOMotorClient(MONGODB_URI)
 db = client["rakuten-database"]
 
+# Include routes
+app.include_router(router=model.router, prefix="/api", tags=["model"])
 
+"""
 # Pydantic model for our data
 class Item(BaseModel):
     name: str
     description: str
-
-
-# Connect to MongoDB on startup
-@app.on_event("startup")
-async def startup_db_client():
-    app.mongodb_client = AsyncIOMotorClient(MONGODB_URI)
-    app.mongodb = app.mongodb_client.testdb
-
-
-# Close MongoDB connection on shutdown
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    app.mongodb_client.close()
 
 
 @app.post("/items/", response_model=Item)
@@ -67,3 +63,4 @@ async def delete_item(item_id: str):
     if delete_result.deleted_count == 1:
         return {"message": "Item deleted successfully"}
     raise HTTPException(status_code=404, detail="Item not found")
+"""
