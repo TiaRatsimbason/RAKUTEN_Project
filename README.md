@@ -1,5 +1,7 @@
 # Project Name
 
+![Tests](https://github.com/DataScientest-Studio/juin24cmlops_rakuten_2/actions/workflows/test.yml/badge.svg)
+
 This project is a starting Pack for MLOps projects based on the subject "movie_recommandation". It's not perfect so feel free to make some modifications on it.
 
 ## Project Organization
