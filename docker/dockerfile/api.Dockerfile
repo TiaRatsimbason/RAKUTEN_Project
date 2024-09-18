@@ -15,6 +15,7 @@ RUN apt-get update; \
 COPY src/api /app
 COPY src/scripts /app/scripts
 COPY models /app/models
+COPY data/preprocessed /app/data/preprocessed
 
 # Upgrade pip to ensure it is up-to-date
 RUN python -m pip install --upgrade pip
@@ -32,6 +33,9 @@ COPY pyproject.toml poetry.lock* ./
 # `poetry install --no-interaction --no-ansi`: This tells Poetry to install all project dependencies listed in the pyproject.toml file.
 # The flags disable interactive prompts and ANSI color codes for clean output in the build process.
 RUN poetry config virtualenvs.create false && poetry install --no-interaction --no-ansi
+
+# Download punkt_tab used in nltk
+RUN python -m nltk.downloader punkt_tab
 
 # Make port 8000 available to the world outside this container
 EXPOSE 8000

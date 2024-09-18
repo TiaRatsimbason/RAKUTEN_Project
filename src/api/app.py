@@ -11,6 +11,7 @@ from routes import model
 
 app = FastAPI()
 
+API_URL = "/api"
 
 # MongoDB connection
 MONGODB_URI = os.getenv("MONGODB_URI")
@@ -18,7 +19,7 @@ client = AsyncIOMotorClient(MONGODB_URI)
 db = client["rakuten-database"]
 
 # Include routes
-app.include_router(router=model.router, prefix="/api", tags=["model"])
+app.include_router(router=model.router, prefix=f"{API_URL}/model", tags=["model"])
 
 """
 # Pydantic model for our data

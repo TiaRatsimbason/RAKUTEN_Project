@@ -24,6 +24,8 @@ typing-extensions = "^4.12.2"
 nltk = "^3.9.1"
 bs4 = "^0.0.2"
 python-multipart = "^0.0.9"
+scikit-learn = "^1.5.2"
+pillow = "^10.4.0"
 
 [build-system]
 requires = ["poetry-core"]

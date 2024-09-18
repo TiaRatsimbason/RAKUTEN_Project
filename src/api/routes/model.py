@@ -21,7 +21,7 @@ predictor = load_predictor()
 async def train_model():
     try:
         # Execute the main.py script to train the model
-        subprocess.run(["python", "src/scripts/main.py"], check=True)
+        subprocess.run(["python", "scripts/main.py"], check=True)
         return {"message": "Model training completed successfully."}
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Error in training model: {e}")
