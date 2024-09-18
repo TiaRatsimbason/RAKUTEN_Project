@@ -7,7 +7,7 @@ BASE_URL = "http://localhost:8000"
 class TestPerformance(unittest.TestCase):
 
     def test_prediction_response_time(self):
-        files = {'file': open('test_image.jpg', 'rb')}
+        files = {'file': open('data/preprocessed/image_test/image_529140_product_923202.jpg', 'rb')}
         start_time = time.time()
         response = requests.post(f"{BASE_URL}/api/predict/", files=files)
         elapsed_time = time.time() - start_time
