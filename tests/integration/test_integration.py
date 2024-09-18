@@ -22,7 +22,7 @@ class TestIntegration(unittest.TestCase):
     
     def test_predict(self):
         headers = {"Authorization": f"Bearer {self.user_token}"}
-        files = {'file': open('test_image.jpg', 'rb')}
+        files = {'file': open('data/preprocessed/image_test/image_529140_product_923202.jpg', 'rb')}
         data = {'n_samples': 10}
         response = requests.post(f"{BASE_URL}/api/predict/", headers=headers, files=files, data=data)
         self.assertEqual(response.status_code, 200)
