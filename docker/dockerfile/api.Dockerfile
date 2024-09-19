@@ -12,10 +12,10 @@ RUN apt-get update; \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*;
 
 # Copy the current directory contents into the container at /app
-COPY src/api /app
-COPY src/scripts /app/scripts
-COPY models /app/models
-COPY data/preprocessed /app/data/preprocessed
+COPY src/api /app/
+COPY src/scripts /app/scripts/
+COPY models /app/models/
+COPY data/preprocessed /app/data/preprocessed/
 
 # Upgrade pip to ensure it is up-to-date
 RUN python -m pip install --upgrade pip

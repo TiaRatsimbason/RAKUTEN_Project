@@ -9,6 +9,7 @@ services:
       - MONGO_INITDB_ROOT_PASSWORD=motdepasseadmin
     volumes:
       - mongo_database-dev:/data/db
+    container_name: rakuten-mongo
 
   api:
     image: rakuten-api:latest
@@ -22,6 +23,7 @@ services:
     depends_on:
       mongo:
         condition: service_started
+    container_name: rakuten-api
 
 volumes:
   mongo_database-dev:

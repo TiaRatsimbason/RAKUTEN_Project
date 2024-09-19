@@ -11,6 +11,7 @@ from sklearn.metrics import precision_score, recall_score, f1_score
 
 # Local/application-specific imports
 from scripts.predict import load_predictor
+from scripts.features.build_features import DataImporter
 
 router = APIRouter()
 
@@ -64,38 +65,41 @@ async def predict(
 
 
 @router.post("/evaluate-model/")
-async def evaluate_model(n_samples: int = 1000):
+async def evaluate_model():
     try:
-        X_eval = pd.read_csv("data/preprocessed/X_eval_update.csv").sample(
-            n=n_samples, random_state=42
-        )
-        y_eval = pd.read_csv("data/preprocessed/Y_eval_update.csv").sample(
-            n=n_samples, random_state=42
-        )
+        print("load data")
+        data_importer = DataImporter()
 
-        if y_eval.shape[1] > 1:
-            y_eval = y_eval.iloc[:, 1]
+        df = data_importer.load_data()
+        _, X_eval, _, _, y_eval, _ = data_importer.split_train_test(df)
 
         # Charger le prédicteur au démarrage de l'application
         predictor = load_predictor()
 
-        predictions = predictor.predict(X_eval, "data/preprocessed/image_eval")
+        print("prediction")
+        predictions = predictor.predict(X_eval, "data/preprocessed/image_train")
 
+        print("Mapping")
         with open("models/mapper.json", "r") as json_file:
             mapper = json.load(json_file)
 
-        mapped_predictions = [mapper[str(pred)] for pred in predictions]
+        mapped_y_eval = []
+        for val in y_eval.values.flatten():
+            mapped_y_eval.append(mapper[f"{val}"])
 
-        y_eval = y_eval.astype(str)
-        mapped_predictions = [str(pred) for pred in mapped_predictions]
+        print("Mapping predictions")
+        mapped_predictions = [str(pred) for pred in predictions.values()]
 
+        print("Calcul score")
         precision = precision_score(
-            y_eval, mapped_predictions, average="macro", zero_division=0
+            mapped_y_eval, mapped_predictions, average="macro", zero_division=0
         )
         recall = recall_score(
-            y_eval, mapped_predictions, average="macro", zero_division=0
+            mapped_y_eval, mapped_predictions, average="macro", zero_division=0
         )
-        f1 = f1_score(y_eval, mapped_predictions, average="macro", zero_division=0)
+        f1 = f1_score(
+            mapped_y_eval, mapped_predictions, average="macro", zero_division=0
+        )
 
         return {
             "evaluation_report": {
