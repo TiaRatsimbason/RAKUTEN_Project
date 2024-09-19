@@ -1,4 +1,4 @@
-from src.features.build_features import TextPreprocessor, ImagePreprocessor
+from scripts.features.build_features import TextPreprocessor, ImagePreprocessor
 import tensorflow as tf
 from tensorflow.keras.applications.vgg16 import preprocess_input
 from tensorflow.keras.preprocessing.image import img_to_array, load_img
@@ -8,6 +8,7 @@ import json
 from tensorflow import keras
 import pandas as pd
 import argparse
+
 
 class Predict:
     def __init__(self, tokenizer, lstm, vgg16, best_weights, mapper):
@@ -34,7 +35,9 @@ class Predict:
 
         # Convertir le texte en séquences de tokens
         sequences = self.tokenizer.texts_to_sequences(df["description"])
-        padded_sequences = pad_sequences(sequences, maxlen=10, padding="post", truncating="post")
+        padded_sequences = pad_sequences(
+            sequences, maxlen=10, padding="post", truncating="post"
+        )
 
         # Prétraiter les images
         target_size = (224, 224, 3)
@@ -46,13 +49,19 @@ class Predict:
         vgg16_proba = self.vgg16.predict([images])
 
         # Combiner les probabilités selon les poids
-        concatenate_proba = (self.best_weights[0] * lstm_proba + self.best_weights[1] * vgg16_proba)
+        concatenate_proba = (
+            self.best_weights[0] * lstm_proba + self.best_weights[1] * vgg16_proba
+        )
         final_predictions = np.argmax(concatenate_proba, axis=1)
 
         # Mapper les résultats aux catégories
-        predictions = {i: self.mapper[str(final_predictions[i])] for i in range(len(final_predictions))}
+        predictions = {
+            i: self.mapper[str(final_predictions[i])]
+            for i in range(len(final_predictions))
+        }
 
         return predictions
+
 
 def load_predictor():
     # Charger les configurations et modèles
@@ -71,11 +80,22 @@ def load_predictor():
 
     return Predict(tokenizer, lstm, vgg16, best_weights, mapper)
 
+
 def main():
     parser = argparse.ArgumentParser(description="Input data")
-    
-    parser.add_argument("--dataset_path", default="data/preprocessed/X_train_update.csv", type=str, help="File path for the input CSV file.")
-    parser.add_argument("--images_path", default="data/preprocessed/image_train", type=str, help="Base path for the images.")
+
+    parser.add_argument(
+        "--dataset_path",
+        default="data/preprocessed/X_train_update.csv",
+        type=str,
+        help="File path for the input CSV file.",
+    )
+    parser.add_argument(
+        "--images_path",
+        default="data/preprocessed/image_train",
+        type=str,
+        help="Base path for the images.",
+    )
     args = parser.parse_args()
 
     # Charger le prédicteur
@@ -88,6 +108,7 @@ def main():
     # Sauvegarde des prédictions
     with open("data/preprocessed/predictions.json", "w", encoding="utf-8") as json_file:
         json.dump(predictions, json_file, indent=2)
+
 
 if __name__ == "__main__":
     main()

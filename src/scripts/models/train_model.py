@@ -179,9 +179,7 @@ class concatenate:
         num_classes = 27
 
         new_X_train = pd.DataFrame(columns=X_train.columns)
-        new_y_train = pd.DataFrame(
-            columns=[0]
-        )  # Créez la structure pour les étiquettes
+        new_y_train = pd.DataFrame(columns=[])  # Créez la structure pour les étiquettes
 
         # Boucle à travers chaque classe
         for class_label in range(num_classes):

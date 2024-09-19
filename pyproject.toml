@@ -1,0 +1,32 @@
+[tool.poetry]
+name = "juin24cmlops_rakuten"
+version = "0.1.0"
+description = "A starting point for building an end-to-end machine learning pipeline."
+authors = [
+    "Jeremy Rava <jeremy.rava@outlook.com>",
+]
+license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/DataScientest-Studio/juin24cmlops_rakuten_2"
+repository = "https://github.com/DataScientest-Studio/juin24cmlops_rakuten_2"
+packages = [{include = "juin24cmlops_rakuten_2"}]
+
+[tool.poetry.dependencies]
+python = ">=3.10,<3.13"
+keras = "^2.13"
+tensorflow = "^2.13"
+pandas = "^2.2.2"
+pymongo = "^4.8.0"
+uvicorn = "^0.30.6"
+motor = "^3.5.1"
+fastapi = "^0.114.2"
+typing-extensions = "^4.12.2"
+nltk = "^3.9.1"
+bs4 = "^0.0.2"
+python-multipart = "^0.0.9"
+scikit-learn = "^1.5.2"
+pillow = "^10.4.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
