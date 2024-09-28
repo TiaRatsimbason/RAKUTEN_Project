@@ -5,10 +5,13 @@ from models.train_model import TextLSTMModel, ImageVGG16Model, concatenate
 from tensorflow import keras
 import pickle
 import tensorflow as tf
+import numpy as np
 
 # Démarrer une session MLFlow
-with mlflow.start_run(run_name="Train Models"):
+if mlflow.active_run() is not None:
+    mlflow.end_run()  # End any existing active run
 
+with mlflow.start_run(run_name="Train Models"):
     data_importer = DataImporter()
     df = data_importer.load_data()
     X_train, X_val, _, y_train, y_val, _ = data_importer.split_train_test(df)
@@ -32,8 +35,14 @@ with mlflow.start_run(run_name="Train Models"):
     text_lstm_model.preprocess_and_fit(X_train, y_train, X_val, y_val)
     print("Finished training LSTM")
 
+    input_example = {
+        "description": ["This is a sample description for the LSTM model."],
+        "image": np.random.rand(1, 224, 224, 3).tolist()
+    }
+
+
     # Enregistrer le modèle LSTM dans MLFlow
-    mlflow.tensorflow.log_model(text_lstm_model.model, "TextLSTMModel")
+    mlflow.tensorflow.log_model(text_lstm_model.model, "TextLSTMModel", input_example=input_example)
 
     print("Training VGG")
     # Train VGG16 model
@@ -42,7 +51,7 @@ with mlflow.start_run(run_name="Train Models"):
     print("Finished training VGG")
 
     # Enregistrer le modèle VGG16 dans MLFlow
-    mlflow.tensorflow.log_model(image_vgg16_model.model, "ImageVGG16Model")
+    mlflow.tensorflow.log_model(image_vgg16_model.model, "ImageVGG16Model", input_example=input_example)
 
     # Charger les modèles pour le modèle concaténé
     with open("models/tokenizer_config.json", "r", encoding="utf-8") as json_file:

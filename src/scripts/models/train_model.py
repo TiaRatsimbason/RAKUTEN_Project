@@ -3,11 +3,11 @@ import mlflow.tensorflow
 import tensorflow as tf
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
-from tensorflow.keras.layers import Input, Embedding, LSTM, Dense
+from tensorflow.keras.layers import Input, Embedding, LSTM, Dense, Flatten
 from tensorflow.keras.models import Model
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, TensorBoard
-from tensorflow.keras.applications.vgg16 import VGG16
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.applications.vgg16 import VGG16, preprocess_input
+from tensorflow.keras.preprocessing.image import ImageDataGenerator, load_img, img_to_array
 import pandas as pd
 from sklearn.utils import resample
 from sklearn.metrics import accuracy_score
@@ -24,6 +24,10 @@ class TextLSTMModel:
         self.model = None
 
     def preprocess_and_fit(self, X_train, y_train, X_val, y_val):
+        # End any existing active run
+        if mlflow.active_run() is not None:
+            mlflow.end_run()
+
         with mlflow.start_run(run_name="TextLSTMModel"):
             # Log hyperparameters
             mlflow.log_param("max_words", self.max_words)
@@ -82,6 +86,10 @@ class ImageVGG16Model:
         self.model = None
 
     def preprocess_and_fit(self, X_train, y_train, X_val, y_val):
+        # End any existing active run
+        if mlflow.active_run() is not None:
+            mlflow.end_run()
+
         with mlflow.start_run(run_name="ImageVGG16Model"):
             # Log hyperparameters
             mlflow.log_param("batch_size", 32)
