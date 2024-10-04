@@ -8,12 +8,14 @@ services:
       - MONGO_INITDB_ROOT_USERNAME=admin
       - MONGO_INITDB_ROOT_PASSWORD=motdepasseadmin
     volumes:
-      - mongo_database-staging:/data/db
+      - mongo_database-dev:/data/db
+    container_name: rakuten-mongo
 
   api:
+    image: rakuten-api:latest
     build:
-      context: ../..
-      dockerfile: docker/dockerfile/api.Dockerfile
+      context: .
+      dockerfile: api.Dockerfile
     ports:
       - "8000:8000"
     environment:
@@ -21,6 +23,7 @@ services:
     depends_on:
       mongo:
         condition: service_started
+    container_name: rakuten-api
 
 volumes:
-  mongo_database-staging:
+  mongo_database-dev:

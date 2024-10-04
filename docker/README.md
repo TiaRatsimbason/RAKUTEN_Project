@@ -1,23 +1,15 @@
-# ⚠️ TODO
-- [ ] Il faudra mettre à jour toutes les partie `api` afin que les docker-compose fonctionnent et lancent l'application
-- [ ] Faire les fichiers `Dockerfile.api`et `Dockerfile.test`
+# First build images
+
+> `docker-compose -f docker/docker-compose.yaml build`
 
 # Exécuter l'environnement de développement
 
-`docker-compose -f docker/docker-compose/docker-compose.dev.yaml up --build` <-- lancer le docker-compose de l'environnement de développement
+> `docker-compose --env-file .env.dev up
 
 # Exécuter l'environnement de staging
 
-`docker-compose -f docker/docker-compose/docker-compose.staging.yaml up --build` <-- lancer le docker-compose de l'environnement de staging
-
-
-# Exécuter l'environnement de test
-
-`docker-compose -f docker/docker-compose/docker-compose.testapp.yaml up --build` <-- lancer le docker-compose de l'environnement de test
-
-**le nom du fichier est *.testapp.yaml car docker-compose.test.yaml file is using prometheus.rules.test.json first (voir: [issue #949 vscode-yaml](https://github.com/redhat-developer/vscode-yaml/issues/949))**
-
+> `docker-compose --env-file .env.staging up
 
 # Exécuter l'environnement de production
 
-`docker-compose -f docker/docker-compose/docker-compose.prod.yaml up --build` <-- lancer le docker-compose de l'environnement de production
+> `docker-compose --env-file .env.prod up
