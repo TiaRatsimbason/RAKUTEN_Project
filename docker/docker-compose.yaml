@@ -14,8 +14,8 @@ services:
   api:
     image: rakuten-api:latest
     build:
-      context: .
-      dockerfile: api.Dockerfile
+      context: ../
+      dockerfile: docker/api.Dockerfile
     ports:
       - "8000:8000"
     environment:
