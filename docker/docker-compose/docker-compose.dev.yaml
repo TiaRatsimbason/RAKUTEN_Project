@@ -24,7 +24,7 @@ services:
       MLFLOW_TRACKING_URI: http://mlflow-ui:5000
       MLFLOW_ARTIFACT_URI: /mlruns
     volumes:
-      - mlruns-data:/app/mlruns
+      - shared_data: ${ENVIRONMENT}/app/mlruns
     depends_on:
       mongo:
         condition: service_started
