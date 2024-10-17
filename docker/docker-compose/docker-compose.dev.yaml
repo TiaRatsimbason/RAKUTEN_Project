@@ -9,7 +9,7 @@ services:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: motdepasseadmin
     volumes:
-      - mongo_database-dev:/data/db
+      - shared_data: ${ENVIRONMENT}/data/db/
     container_name: rakuten-mongo
 
   api:
