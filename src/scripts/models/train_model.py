@@ -190,7 +190,7 @@ class concatenate:
         train_padded_sequences = pad_sequences(train_sequences, maxlen=max_sequence_length, padding="post", truncating="post")
 
         # Preprocess images
-        target_size = (224, 224)
+        target_size = (224, 224, 3)
         images_train = new_X_train["image_path"].apply(lambda x: self.preprocess_image(x, target_size))
         images_train = tf.convert_to_tensor(images_train.tolist(), dtype=tf.float32)
 
