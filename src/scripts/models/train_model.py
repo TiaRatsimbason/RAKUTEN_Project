@@ -39,6 +39,9 @@ class TextLSTMModel:
             tokenizer_config = self.tokenizer.to_json()
             with open("models/tokenizer_config.json", "w", encoding="utf-8") as json_file:
                 json_file.write(tokenizer_config)
+                
+            # Log tokenizer configuration to MLFlow
+            mlflow.log_artifact("models/tokenizer_config.json")
 
             # Prepare sequences
             train_sequences = self.tokenizer.texts_to_sequences(X_train["description"])
@@ -79,6 +82,7 @@ class TextLSTMModel:
 
             # Log the LSTM model
             mlflow.tensorflow.log_model(self.model, "TextLSTMModel")
+            mlflow.log_artifact("logs")
 
 
 class ImageVGG16Model:
@@ -153,6 +157,7 @@ class ImageVGG16Model:
 
             # Log the VGG16 model
             mlflow.tensorflow.log_model(self.model, "ImageVGG16Model")
+            mlflow.log_artifact("logs")
 
 
 class concatenate:
