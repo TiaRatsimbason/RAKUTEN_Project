@@ -15,6 +15,8 @@ from tensorflow import keras
 import json
 import numpy as np
 
+BATCH_SIZE = 23
+NUM_CLASSES = 27
 
 class TextLSTMModel:
     def __init__(self, max_words=10000, max_sequence_length=10):
@@ -32,7 +34,7 @@ class TextLSTMModel:
             # Log hyperparameters
             mlflow.log_param("max_words", self.max_words)
             mlflow.log_param("max_sequence_length", self.max_sequence_length)
-            mlflow.log_param("batch_size", 32)
+            mlflow.log_param("batch_size", BATCH_SIZE)
 
             # Tokenizer configuration
             self.tokenizer.fit_on_texts(X_train["description"])
@@ -50,7 +52,7 @@ class TextLSTMModel:
             text_input = Input(shape=(self.max_sequence_length,))
             embedding_layer = Embedding(input_dim=self.max_words, output_dim=128)(text_input)
             lstm_layer = LSTM(128)(embedding_layer)
-            output = Dense(27, activation="softmax")(lstm_layer)
+            output = Dense(NUM_CLASSES, activation="softmax")(lstm_layer)
 
             self.model = Model(inputs=[text_input], outputs=output)
             self.model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
@@ -64,10 +66,10 @@ class TextLSTMModel:
             # Train the model
             history = self.model.fit(
                 [train_padded_sequences],
-                tf.keras.utils.to_categorical(y_train, num_classes=27),
+                tf.keras.utils.to_categorical(y_train, num_classes=NUM_CLASSES),
                 epochs=1,
-                batch_size=32,
-                validation_data=([val_padded_sequences], tf.keras.utils.to_categorical(y_val, num_classes=27)),
+                batch_size=BATCH_SIZE,
+                validation_data=([val_padded_sequences], tf.keras.utils.to_categorical(y_val, num_classes=NUM_CLASSES)),
                 callbacks=lstm_callbacks,
             )
 
@@ -92,8 +94,8 @@ class ImageVGG16Model:
 
         with mlflow.start_run(run_name="ImageVGG16Model"):
             # Log hyperparameters
-            mlflow.log_param("batch_size", 32)
-            mlflow.log_param("num_classes", 27)
+            mlflow.log_param("batch_size", BATCH_SIZE)
+            mlflow.log_param("num_classes", NUM_CLASSES)
 
             df_train = pd.concat([X_train, y_train.astype(str)], axis=1)
             df_val = pd.concat([X_val, y_val.astype(str)], axis=1)
@@ -105,7 +107,7 @@ class ImageVGG16Model:
                 x_col="image_path",
                 y_col="prdtypecode",
                 target_size=(224, 224),
-                batch_size=32,
+                batch_size=BATCH_SIZE,
                 class_mode="categorical",
                 shuffle=True,
             )
@@ -116,7 +118,7 @@ class ImageVGG16Model:
                 x_col="image_path",
                 y_col="prdtypecode",
                 target_size=(224, 224),
-                batch_size=32,
+                batch_size=BATCH_SIZE,
                 class_mode="categorical",
                 shuffle=False,
             )
@@ -127,7 +129,7 @@ class ImageVGG16Model:
             x = vgg16_base.output
             x = Flatten()(x)
             x = Dense(256, activation="relu")(x)
-            output = Dense(27, activation="softmax")(x)
+            output = Dense(NUM_CLASSES, activation="softmax")(x)
 
             self.model = Model(inputs=vgg16_base.input, outputs=output)
 
@@ -168,7 +170,7 @@ class concatenate:
         return img_array
 
     def predict(self, X_train, y_train, new_samples_per_class=50, max_sequence_length=10):
-        num_classes = 27
+        num_classes = NUM_CLASSES
 
         new_X_train = pd.DataFrame(columns=X_train.columns)
         new_y_train = pd.DataFrame(columns=[])
