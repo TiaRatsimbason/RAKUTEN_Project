@@ -15,7 +15,7 @@ services:
   api:
     image: rakuten-api:latest
     build:
-      context: ../..
+      context: ../
       dockerfile: docker/api.Dockerfile
     ports:
       - "8000:8000"
@@ -34,7 +34,7 @@ services:
 
   mlflow-ui:
     build:
-      context: ../..
+      context: ../
       dockerfile: docker/mlflow-ui.Dockerfile  # Le Dockerfile pour mlflow-ui
     ports:
       - "5000:5000"
