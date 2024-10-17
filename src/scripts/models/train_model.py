@@ -11,8 +11,6 @@ from tensorflow.keras.preprocessing.image import ImageDataGenerator, load_img, i
 import pandas as pd
 from sklearn.utils import resample
 from sklearn.metrics import accuracy_score
-from tensorflow import keras
-import json
 import numpy as np
 
 BATCH_SIZE = 23
