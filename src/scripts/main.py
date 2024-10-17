@@ -7,6 +7,13 @@ import pickle
 import tensorflow as tf
 import numpy as np
 
+# Définir l'URI du serveur MLFlow
+mlflow.set_tracking_uri("http://mlflow-ui:5000")  # Assurez-vous que l'URI est correcte
+
+# Définir ou récupérer un experiment dans MLFlow
+experiment_name = "Rakuten Model Training"
+mlflow.set_experiment(experiment_name)  # Crée ou récupère un experiment avec ce nom
+
 # Démarrer une session MLFlow
 if mlflow.active_run() is not None:
     mlflow.end_run()  # End any existing active run

@@ -31,16 +31,15 @@ async def train_model():
 
 
 @router.post("/predict/")
-async def predict(
-    file: UploadFile = File(...), images_folder: str = "data/preprocessed/image_test"
-):
+async def predict(images_folder: str = "data/preprocessed/image_test"):
     try:
-        # Sauvegarder le fichier temporairement
-        with open("temp.csv", "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        # Lire le fichier CSV directement depuis le chemin spécifié dans le conteneur
+        file_path = "data/preprocessed/X_test_update.csv"
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="CSV file not found")
 
         # Lire le fichier CSV et le convertir en DataFrame
-        df = pd.read_csv("temp.csv")[:10]
+        df = pd.read_csv(file_path)[:10]
 
         # Charger le prédicteur au démarrage de l'application
         predictor = load_predictor()
@@ -52,9 +51,6 @@ async def predict(
         output_path = "data/preprocessed/predictions.json"
         with open(output_path, "w") as json_file:
             json.dump(predictions, json_file, indent=2)
-
-        # Supprimer le fichier temporaire après utilisation
-        os.remove("temp.csv")
 
         return {"predictions": predictions}
 
