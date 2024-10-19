@@ -210,4 +210,8 @@ class concatenate:
                 best_accuracy = accuracy
                 best_weights = (lstm_weight, vgg16_weight)
 
+        # Enregistrer les meilleurs poids dans MLflow
+        mlflow.log_param("best_lstm_weight", best_weights[0])
+        mlflow.log_param("best_vgg16_weight", best_weights[1])
+
         return best_weights
