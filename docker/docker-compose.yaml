@@ -38,7 +38,9 @@ services:
     ports:
       - "5000:5000"
     environment:
+      MONGODB_URI: mongodb://admin:motdepasseadmin@mongo:27017/
       MLFLOW_TRACKING_URI: http://mlflow-ui:5000
+      MLFLOW_ARTIFACT_URI: /app/mlruns
     volumes:
       - mongo_database-dev:/app/mlruns
     container_name: mlflow-ui
