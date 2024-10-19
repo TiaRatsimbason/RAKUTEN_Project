@@ -24,11 +24,8 @@ class TextLSTMModel:
         self.model = None
 
     def preprocess_and_fit(self, X_train, y_train, X_val, y_val):
-        # End any existing active run
-        if mlflow.active_run() is not None:
-            mlflow.end_run()
-
-        with mlflow.start_run(run_name="TextLSTMModel"):
+        # Utiliser un run imbriqué pour TextLSTMModel
+        with mlflow.start_run(run_name="TextLSTMModel", nested=True):
             # Log hyperparameters
             mlflow.log_param("max_words", self.max_words)
             mlflow.log_param("max_sequence_length", self.max_sequence_length)
@@ -39,8 +36,6 @@ class TextLSTMModel:
             tokenizer_config = self.tokenizer.to_json()
             with open("models/tokenizer_config.json", "w", encoding="utf-8") as json_file:
                 json_file.write(tokenizer_config)
-                
-            # Log tokenizer configuration to MLFlow
             mlflow.log_artifact("models/tokenizer_config.json")
 
             # Prepare sequences
@@ -90,11 +85,8 @@ class ImageVGG16Model:
         self.model = None
 
     def preprocess_and_fit(self, X_train, y_train, X_val, y_val):
-        # End any existing active run
-        if mlflow.active_run() is not None:
-            mlflow.end_run()
-
-        with mlflow.start_run(run_name="ImageVGG16Model"):
+        # Utiliser un run imbriqué pour ImageVGG16Model
+        with mlflow.start_run(run_name="ImageVGG16Model", nested=True):
             # Log hyperparameters
             mlflow.log_param("batch_size", BATCH_SIZE)
             mlflow.log_param("num_classes", NUM_CLASSES)
@@ -217,5 +209,9 @@ class concatenate:
             if accuracy > best_accuracy:
                 best_accuracy = accuracy
                 best_weights = (lstm_weight, vgg16_weight)
+
+        # Enregistrer les meilleurs poids dans MLflow
+        mlflow.log_param("best_lstm_weight", best_weights[0])
+        mlflow.log_param("best_vgg16_weight", best_weights[1])
 
         return best_weights
