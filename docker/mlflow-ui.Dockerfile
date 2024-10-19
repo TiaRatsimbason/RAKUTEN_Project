@@ -19,10 +19,10 @@ RUN pip install --upgrade pip
 RUN pip install --no-cache-dir mlflow pyarrow
 
 # Créer les volumes nécessaires pour les artefacts MLFlow
-VOLUME ["/mlruns"]
+VOLUME ["/app/mlruns"]
 
 # Exposer le port 5000 pour l'interface MLFlow
 EXPOSE 5000
 
-# Lancer le serveur MLFlow
-CMD ["mlflow", "ui", "--host", "0.0.0.0", "--backend-store-uri", "/mlruns", "--default-artifact-root", "/mlruns"]
+# Lancer le serveur MLFlow avec les chemins corrects
+CMD ["mlflow", "ui", "--host", "0.0.0.0", "--backend-store-uri", "/app/mlruns", "--default-artifact-root", "/app/mlruns"]
