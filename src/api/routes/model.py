@@ -31,16 +31,15 @@ async def train_model():
 
 
 @router.post("/predict/")
-async def predict(
-    file: UploadFile = File(...), images_folder: str = "data/preprocessed/image_test"
-):
+async def predict(images_folder: str = "data/preprocessed/image_test"):
     try:
-        # Sauvegarder le fichier temporairement
-        with open("temp.csv", "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        # Lire le fichier CSV directement depuis le chemin spécifié dans le conteneur
+        file_path = "data/preprocessed/X_test_update.csv"
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="CSV file not found")
 
         # Lire le fichier CSV et le convertir en DataFrame
-        df = pd.read_csv("temp.csv")[:10]
+        df = pd.read_csv(file_path)[:10]
 
         # Charger le prédicteur au démarrage de l'application
         predictor = load_predictor()
@@ -52,9 +51,6 @@ async def predict(
         output_path = "data/preprocessed/predictions.json"
         with open(output_path, "w") as json_file:
             json.dump(predictions, json_file, indent=2)
-
-        # Supprimer le fichier temporaire après utilisation
-        os.remove("temp.csv")
 
         return {"predictions": predictions}
 
@@ -70,27 +66,35 @@ async def evaluate_model():
         print("load data")
         data_importer = DataImporter()
 
+        # Charger les données
         df = data_importer.load_data()
-        _, X_eval, _, _, y_eval, _ = data_importer.split_train_test(df)
+        _, _, X_eval, _, _, y_eval = data_importer.split_train_test(df)
+        
+        # Réduction de la taille des données de test à utiliser pour l'evaluation du modèle (ici 10% des données) --> en utilisant toutes les données de test le conteneur crash
+        X_eval_sample = X_eval.sample(frac=0.1, random_state=42)
+        y_eval_sample = y_eval.loc[X_eval_sample.index]
 
         # Charger le prédicteur au démarrage de l'application
         predictor = load_predictor()
 
         print("prediction")
-        predictions = predictor.predict(X_eval, "data/preprocessed/image_train")
+        # Prédictions avec l'échantillon réduit
+        predictions = predictor.predict(X_eval_sample, "data/preprocessed/image_train")
 
         print("Mapping")
         with open("models/mapper.json", "r") as json_file:
             mapper = json.load(json_file)
 
+        # Mapping des vraies valeurs avec l'échantillon réduit
         mapped_y_eval = []
-        for val in y_eval.values.flatten():
+        for val in y_eval_sample.values.flatten():
             mapped_y_eval.append(mapper[f"{val}"])
 
         print("Mapping predictions")
         mapped_predictions = [str(pred) for pred in predictions.values()]
 
         print("Calcul score")
+        # Calcul des métriques avec l'échantillon réduit
         precision = precision_score(
             mapped_y_eval, mapped_predictions, average="macro", zero_division=0
         )
@@ -101,6 +105,7 @@ async def evaluate_model():
             mapped_y_eval, mapped_predictions, average="macro", zero_division=0
         )
 
+        # Retour des résultats d'évaluation
         return {
             "evaluation_report": {
                 "precision": precision,
@@ -113,3 +118,4 @@ async def evaluate_model():
         raise HTTPException(
             status_code=500, detail=f"An error occurred during model evaluation: {e}"
         )
+
