@@ -23,7 +23,7 @@ services:
       MLFLOW_TRACKING_URI: http://mlflow-ui:5000
       MLFLOW_ARTIFACT_URI: /app/mlruns
     volumes:
-      - mongo_database-dev:/app/mlruns
+      - mlflow-artifacts:/app/mlruns
     depends_on:
       mongo:
         condition: service_started
@@ -40,7 +40,7 @@ services:
     environment:
       MLFLOW_TRACKING_URI: http://mlflow-ui:5000
     volumes:
-      - mongo_database-dev:/app/mlruns
+      - mlflow-artifacts:/app/mlruns
     container_name: mlflow-ui
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:5000/ || exit 1"]
@@ -50,3 +50,4 @@ services:
 
 volumes:
   mongo_database-dev:
+  mlflow-artifacts:  # Volume séparé pour les artefacts MLflow
