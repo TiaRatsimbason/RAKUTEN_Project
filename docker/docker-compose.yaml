@@ -34,7 +34,7 @@ services:
   mlflow-ui:
     build:
       context: ../
-      dockerfile: docker/mlflow-ui.Dockerfile  # Le Dockerfile pour mlflow-ui
+      dockerfile: docker/mlflow-ui.Dockerfile
     ports:
       - "5000:5000"
     environment:
