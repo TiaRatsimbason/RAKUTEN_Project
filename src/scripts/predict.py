@@ -1,4 +1,6 @@
 from scripts.features.build_features import TextPreprocessor, ImagePreprocessor
+import logging
+import mlflow
 import tensorflow as tf
 from tensorflow.keras.applications.vgg16 import preprocess_input
 from tensorflow.keras.preprocessing.image import img_to_array, load_img
@@ -8,7 +10,12 @@ import json
 from tensorflow import keras
 import pandas as pd
 import argparse
+import os
+import mlflow.pyfunc
 
+# Configurer le logger
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class Predict:
     def __init__(self, tokenizer, lstm, vgg16, best_weights, mapper):
@@ -48,36 +55,92 @@ class Predict:
         lstm_proba = self.lstm.predict([padded_sequences])
         vgg16_proba = self.vgg16.predict([images])
 
-        # Combiner les probabilités selon les poids
-        concatenate_proba = (
-            self.best_weights[0] * lstm_proba + self.best_weights[1] * vgg16_proba
-        )
-        final_predictions = np.argmax(concatenate_proba, axis=1)
+        # Combiner les probabilités selon les poids         
+        concatenate_proba = (             
+            self.best_weights[0] * lstm_proba + self.best_weights[1] * vgg16_proba         
+        )         
+        final_predictions = np.argmax(concatenate_proba, axis=1)          
+
+        # Créer un mapper inverse (valeur -> clé)
+        inverse_mapper = {v: k for k, v in self.mapper.items()}
 
         # Mapper les résultats aux catégories
-        predictions = {
-            i: self.mapper[str(final_predictions[i])]
-            for i in range(len(final_predictions))
-        }
+        predictions = {}
+        for i in range(len(final_predictions)):
+            pred_value = str(self.mapper[str(final_predictions[i])])  # Obtenir la valeur prédite
+            if pred_value in inverse_mapper:
+                original_key = inverse_mapper[pred_value]  # Retrouver la clé correspondante
+                predictions[str(i)] = original_key
+            else:
+                print(f"Warning: value {pred_value} not found in inverse mapper")
 
         return predictions
 
 
-def load_predictor():
-    # Charger les configurations et modèles
-    with open("models/tokenizer_config.json", "r", encoding="utf-8") as json_file:
+def load_predictor(version):
+    logger.info(f"Loading model version: {version}")
+
+    # Récupérer les artefacts du modèle (tokenizer, mapper, etc.)
+    client = mlflow.tracking.MlflowClient()
+    logger.info(f"Getting run_id for model version: {version}")
+    model_version_details = client.get_model_version(
+        name="RegisteredConcatenateModel", version=str(version)
+    )
+    run_id = model_version_details.run_id
+    logger.info(f"Obtained run_id: {run_id}")
+
+    # Utiliser le run_id pour récupérer le détail du run et obtenir l'ID de l'expérience
+    run_details = client.get_run(run_id)
+    experiment_id = run_details.info.experiment_id
+    logger.info(f"Obtained experiment_id: {experiment_id}")
+
+    # Définir le chemin des artefacts
+    artifact_path = f"/app/mlruns/{experiment_id}/{run_id}/artifacts"
+    if not os.path.exists(artifact_path):
+        raise FileNotFoundError(f"Artifact path not found at {artifact_path}")
+
+    logger.info(f"Downloading individual artifacts from {artifact_path}")
+    
+    # Télécharger chaque artefact individuellement
+    tokenizer_path = os.path.join(artifact_path, "tokenizer_config.json")
+    best_weights_path = os.path.join(artifact_path, "best_weights.json")
+    lstm_model_path = os.path.join(artifact_path, "best_lstm_model.h5")
+    vgg16_model_path = os.path.join(artifact_path, "best_vgg16_model.h5")
+    
+    logger.info("Artifacts paths set successfully")
+    
+    # Charger le tokenizer
+    if not os.path.exists(tokenizer_path):
+        raise FileNotFoundError(f"Tokenizer config file not found at {tokenizer_path}")
+    logger.info("Loading tokenizer from downloaded artifacts")
+    with open(tokenizer_path, "r", encoding="utf-8") as json_file:
         tokenizer_config = json_file.read()
     tokenizer = keras.preprocessing.text.tokenizer_from_json(tokenizer_config)
 
-    lstm = keras.models.load_model("models/best_lstm_model.h5")
-    vgg16 = keras.models.load_model("models/best_vgg16_model.h5")
-
-    with open("models/best_weights.json", "r") as json_file:
+    # Charger les poids optimaux depuis les artefacts
+    if not os.path.exists(best_weights_path):
+        raise FileNotFoundError(f"Best weights file not found at {best_weights_path}")
+    logger.info("Loading best weights from downloaded artifacts")
+    with open(best_weights_path, "r") as json_file:
         best_weights = json.load(json_file)
 
+    # Charger les modèles lstm et vgg16
+    if not os.path.exists(lstm_model_path):
+        raise FileNotFoundError(f"LSTM model not found at {lstm_model_path}")
+    logger.info("Loading LSTM model from downloaded artifacts")
+    lstm = keras.models.load_model(lstm_model_path)
+
+    if not os.path.exists(vgg16_model_path):
+        raise FileNotFoundError(f"VGG16 model not found at {vgg16_model_path}")
+    logger.info("Loading VGG16 model from downloaded artifacts")
+    vgg16 = keras.models.load_model(vgg16_model_path)
+
+    # Charger le mapper
     with open("models/mapper.json", "r") as json_file:
         mapper = json.load(json_file)
+    logger.info(f"Loaded mapper: {mapper}")
 
+    # Retourner l'instance de Predict avec tous les paramètres requis
     return Predict(tokenizer, lstm, vgg16, best_weights, mapper)
 
 
@@ -96,10 +159,16 @@ def main():
         type=str,
         help="Base path for the images.",
     )
+    parser.add_argument(
+        "--version",
+        default=1,
+        type=int,
+        help="Version of the model to use.",
+    )
     args = parser.parse_args()
 
-    # Charger le prédicteur
-    predictor = load_predictor()
+    # Charger le prédicteur avec la version spécifiée
+    predictor = load_predictor(args.version)
 
     # Lire le fichier CSV et effectuer la prédiction
     df = pd.read_csv(args.dataset_path)
