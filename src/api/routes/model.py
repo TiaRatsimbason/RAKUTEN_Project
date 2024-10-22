@@ -4,9 +4,10 @@ import os
 import shutil
 import subprocess
 
+
 # Third-party library imports
 import pandas as pd
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, UploadFile, Query
 from sklearn.metrics import precision_score, recall_score, f1_score
 
 # Local/application-specific imports
@@ -31,7 +32,10 @@ async def train_model():
 
 
 @router.post("/predict/")
-async def predict(images_folder: str = "data/preprocessed/image_test"):
+async def predict(
+    images_folder: str = Query("data/preprocessed/image_test", description="Path to the folder containing images"),
+    version: int = Query(1, description="Version number of the model to use")
+):
     try:
         # Lire le fichier CSV directement depuis le chemin spécifié dans le conteneur
         file_path = "data/preprocessed/X_test_update.csv"
@@ -41,8 +45,8 @@ async def predict(images_folder: str = "data/preprocessed/image_test"):
         # Lire le fichier CSV et le convertir en DataFrame
         df = pd.read_csv(file_path)[:10]
 
-        # Charger le prédicteur au démarrage de l'application
-        predictor = load_predictor()
+        # Charger le prédicteur en utilisant la version spécifiée
+        predictor = load_predictor(version)
 
         # Appel de la méthode de prédiction
         predictions = predictor.predict(df, images_folder)
@@ -61,7 +65,7 @@ async def predict(images_folder: str = "data/preprocessed/image_test"):
 
 
 @router.post("/evaluate-model/")
-async def evaluate_model():
+async def evaluate_model(version: int = Query(1, description="Version number of the model to use")):
     try:
         print("load data")
         data_importer = DataImporter()
@@ -75,7 +79,7 @@ async def evaluate_model():
         y_eval_sample = y_eval.loc[X_eval_sample.index]
 
         # Charger le prédicteur au démarrage de l'application
-        predictor = load_predictor()
+        predictor = load_predictor(version)
 
         print("prediction")
         # Prédictions avec l'échantillon réduit
