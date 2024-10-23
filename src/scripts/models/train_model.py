@@ -94,7 +94,6 @@ class TextLSTMModel:
         mlflow.tensorflow.log_model(self.model, "TextLSTMModel")
         mlflow.log_artifact("logs")
 
-
 class ImageVGG16Model:
     def __init__(self):
         self.model = None

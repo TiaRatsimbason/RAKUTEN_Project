@@ -4,6 +4,7 @@ import json
 from features.build_features import DataImporter, TextPreprocessor, ImagePreprocessor
 from models.train_model import TextLSTMModel, ImageVGG16Model, concatenate
 from tensorflow import keras
+import pickle
 import numpy as np
 from sklearn.metrics import accuracy_score
 import os
@@ -12,7 +13,7 @@ import tensorflow as tf
 # Définir l'URI du serveur MLFlow
 mlflow.set_tracking_uri("http://mlflow-ui:5000")
 
-# Définir ou récupérer un experiment dans MLFlow
+# Définir l'experiment dans MLFlow
 experiment_name = "Rakuten Model Training"
 mlflow.set_experiment(experiment_name)
 
@@ -53,7 +54,7 @@ with mlflow.start_run(run_name=f"Train Models {timestamp}") as main_run:
     with open(tokenizer_path, "w", encoding="utf-8") as json_file:
         json_file.write(text_lstm_model.tokenizer.to_json())
     mlflow.log_artifact(tokenizer_path)
-    
+
     print("Finished training LSTM")
 
     # Train VGG16 model
