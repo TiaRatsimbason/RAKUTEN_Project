@@ -1,8 +1,9 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from airflow.providers.amazon.aws.sensors.s3 import S3KeySensor
 from datetime import datetime, timedelta
 from build_features import DataImporter, ImagePreprocessor, TextPreprocessor
-import nltk
+import os
 
 # Définitions par défaut des arguments du DAG
 default_args = {
@@ -54,6 +55,17 @@ with DAG(
     tags=['data_labeling'],
 ) as dag:
 
+    # Sensor pour surveiller les fichiers dans le bucket S3
+    s3_sensor = S3KeySensor(
+        task_id='s3_key_sensor',
+        bucket_name='mlops-project-db',
+        bucket_key='classification_e-commerce/X_train_update.csv',
+        aws_conn_id='aws_default',  # L'ID de connexion AWS configuré dans Airflow
+        timeout=18 * 60 * 60,
+        poke_interval=60 * 10,
+        dag=dag,
+    )
+
     # Tâche pour importer les données brutes
     import_raw_data = PythonOperator(
         task_id='import_raw_data',
@@ -73,4 +85,4 @@ with DAG(
     )
 
     # Définition de la séquence des tâches
-    import_raw_data >> make_dataset >> build_features
+    s3_sensor >> import_raw_data >> make_dataset >> build_features
