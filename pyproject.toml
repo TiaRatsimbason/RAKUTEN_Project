@@ -12,21 +12,19 @@ repository = "https://github.com/DataScientest-Studio/juin24cmlops_rakuten_2"
 packages = [{include = "juin24cmlops_rakuten_2"}]
 
 [tool.poetry.dependencies]
-python = ">=3.10,<3.13"
-keras = "^2.13"
-tensorflow = "^2.13"
-pandas = "^2.2.2"
-pymongo = "^4.8.0"
-uvicorn = "^0.30.6"
-motor = "^3.5.1"
-fastapi = "^0.114.2"
+python = "^3.10.14"
+keras = "^3.6.0"
+tensorflow = "^2.17.0"
+pandas = "^2.2.3"
+pymongo = "^4.10.1"
+mlflow = "^2.17.0"
+fastapi = "^0.115.3"
 typing-extensions = "^4.12.2"
 nltk = "^3.9.1"
 bs4 = "^0.0.2"
-python-multipart = "^0.0.9"
+python-multipart = "^0.0.12"
 scikit-learn = "^1.5.2"
-pillow = "^10.4.0"
-mlflow = "^2.0.1"  # Ajout de MLFlow
+pillow = "^11.0.0"
 
 [build-system]
 requires = ["poetry-core"]
