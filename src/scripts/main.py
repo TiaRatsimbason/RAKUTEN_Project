@@ -1,14 +1,14 @@
-import mlflow
 import datetime
 import json
-from features.build_features import DataImporter, TextPreprocessor, ImagePreprocessor
-from models.train_model import TextLSTMModel, ImageVGG16Model, concatenate
-from tensorflow import keras
-import pickle
+import os
+
+import keras
+import mlflow
 import numpy as np
 from sklearn.metrics import accuracy_score
-import os
-import tensorflow as tf
+
+from src.scripts.features.build_features import DataImporter, TextPreprocessor, ImagePreprocessor
+from src.scripts.models.train_model import TextLSTMModel, ImageVGG16Model, concatenate
 
 # Définir l'URI du serveur MLFlow
 mlflow.set_tracking_uri("http://mlflow-ui:5000")

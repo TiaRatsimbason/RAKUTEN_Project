@@ -12,9 +12,8 @@ RUN apt-get update; \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*;
 
 # Copy the current directory contents into the container at /app
-COPY src/api /app/
-COPY src/scripts /app/scripts/
-COPY models /app/models/
+COPY src/ /app/src/
+COPY models/ /app/models/
 COPY data/preprocessed /app/data/preprocessed/
 
 # Upgrade pip to ensure it is up-to-date
@@ -41,4 +40,4 @@ RUN python -m nltk.downloader punkt_tab
 EXPOSE 8000
 
 # Command to run the FastAPI server
-CMD ["poetry", "run", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["poetry", "run", "uvicorn", "src.api.app:app", "--host", "0.0.0.0", "--port", "8000"]

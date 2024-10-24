@@ -1,17 +1,19 @@
-from scripts.features.build_features import TextPreprocessor, ImagePreprocessor
+import argparse
+import json
 import logging
+import os
+
+import keras
 import mlflow
+import mlflow.pyfunc
+import numpy as np
+import pandas as pd
 import tensorflow as tf
 from tensorflow.keras.applications.vgg16 import preprocess_input
 from tensorflow.keras.preprocessing.image import img_to_array, load_img
 from tensorflow.keras.preprocessing.sequence import pad_sequences
-import numpy as np
-import json
-from tensorflow import keras
-import pandas as pd
-import argparse
-import os
-import mlflow.pyfunc
+
+from src.scripts.features.build_features import TextPreprocessor, ImagePreprocessor
 
 # Configurer le logger
 logging.basicConfig(level=logging.INFO)

@@ -61,6 +61,9 @@ target/
 
 # DotEnv configuration
 .env
+.env.dev
+.env.prod
+.env.prod
 
 # Database
 *.db
@@ -93,6 +96,7 @@ target/
 
 # Log files
 /logs/
+*/logs/
 
 # Artifacts
 # /models/

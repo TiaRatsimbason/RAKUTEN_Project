@@ -1,18 +1,16 @@
 # Standard library imports
 import json
 import os
-import shutil
 import subprocess
-
 
 # Third-party library imports
 import pandas as pd
-from fastapi import APIRouter, File, HTTPException, UploadFile, Query
+from fastapi import APIRouter, HTTPException, Query
 from sklearn.metrics import precision_score, recall_score, f1_score
 
+from src.scripts.features.build_features import DataImporter
 # Local/application-specific imports
-from scripts.predict import load_predictor
-from scripts.features.build_features import DataImporter
+from src.scripts.predict import load_predictor
 
 router = APIRouter()
 
