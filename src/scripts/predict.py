@@ -106,8 +106,8 @@ def load_predictor(version):
     # Télécharger chaque artefact individuellement
     tokenizer_path = os.path.join(artifact_path, "tokenizer_config.json")
     best_weights_path = os.path.join(artifact_path, "best_weights.json")
-    lstm_model_path = os.path.join(artifact_path, "best_lstm_model.h5")
-    vgg16_model_path = os.path.join(artifact_path, "best_vgg16_model.h5")
+    lstm_model_path = os.path.join(artifact_path, "best_lstm_model.keras")
+    vgg16_model_path = os.path.join(artifact_path, "best_vgg16_model.keras")
     
     logger.info("Artifacts paths set successfully")
     

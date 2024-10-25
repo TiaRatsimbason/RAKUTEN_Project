@@ -65,7 +65,7 @@ class TextLSTMModel:
         self.model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
 
         # LSTM Model checkpoint path
-        lstm_checkpoint_path = os.path.join(ARTIFACTS_DIR, "best_lstm_model.h5")
+        lstm_checkpoint_path = os.path.join(ARTIFACTS_DIR, "best_lstm_model.keras")
         lstm_callbacks = [
             ModelCheckpoint(filepath=lstm_checkpoint_path, save_best_only=True),
             EarlyStopping(patience=3, restore_best_weights=True),
@@ -146,7 +146,7 @@ class ImageVGG16Model:
 
         self.model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
 
-        vgg_checkpoint_path = os.path.join(ARTIFACTS_DIR, "best_vgg16_model.h5")
+        vgg_checkpoint_path = os.path.join(ARTIFACTS_DIR, "best_vgg16_model.keras")
         vgg_callbacks = [
             ModelCheckpoint(filepath=vgg_checkpoint_path, save_best_only=True),
             EarlyStopping(patience=3, restore_best_weights=True),

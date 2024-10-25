@@ -45,7 +45,7 @@ with mlflow.start_run(run_name=f"Train Models {timestamp}") as main_run:
     text_lstm_model.preprocess_and_fit(X_train, y_train, X_val, y_val)
 
     # Enregistrer le modèle LSTM
-    lstm_checkpoint_path = os.path.join("models", "best_lstm_model.h5")
+    lstm_checkpoint_path = os.path.join("models", "best_lstm_model.keras")
     text_lstm_model.model.save(lstm_checkpoint_path)
     mlflow.log_artifact(lstm_checkpoint_path)
 
@@ -63,7 +63,7 @@ with mlflow.start_run(run_name=f"Train Models {timestamp}") as main_run:
     image_vgg16_model.preprocess_and_fit(X_train, y_train, X_val, y_val)
 
     # Enregistrer le modèle VGG16
-    vgg16_checkpoint_path = os.path.join("models", "best_vgg16_model.h5")
+    vgg16_checkpoint_path = os.path.join("models", "best_vgg16_model.keras")
     image_vgg16_model.model.save(vgg16_checkpoint_path)
     mlflow.log_artifact(vgg16_checkpoint_path)
     print("Finished training VGG")
@@ -103,13 +103,13 @@ with mlflow.start_run(run_name=f"Train Models {timestamp}") as main_run:
     concatenate_model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
 
     # Enregistrer le modèle concaténé dans MLFlow
-    concatenate_checkpoint_path = os.path.join("models", "concatenate.h5")
+    concatenate_checkpoint_path = os.path.join("models", "concatenate.keras")
     concatenate_model.save(concatenate_checkpoint_path)
     mlflow.log_artifact(concatenate_checkpoint_path)
 
     # Enregistrer le modèle dans le registre des modèles MLflow
     print("Registering the concatenated model in MLFlow")
-    model_uri = f"runs:/{mlflow.active_run().info.run_id}/artifacts/concatenate.h5"
+    model_uri = f"runs:/{mlflow.active_run().info.run_id}/artifacts/concatenate.keras"
     mlflow.register_model(model_uri, "RegisteredConcatenateModel")
 
     # Calculer et enregistrer les métriques du modèle concaténé
