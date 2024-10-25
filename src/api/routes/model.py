@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Query
 from sklearn.metrics import precision_score, recall_score, f1_score
 
 from src.scripts.features.build_features import DataImporter
-from src.scripts.main import main_run
+from src.scripts.main import train_and_save_model
 from src.scripts.predict import load_predictor
 
 router = APIRouter()
@@ -20,7 +20,7 @@ async def train_model():
     try:
         # Execute the main.py script to train the model
         # subprocess.run(["python", "src/scripts/main.py"], check=True)
-        main_run()
+        train_and_save_model()
         return {"message": "Model training completed successfully."}
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Error in training model: {e}")
