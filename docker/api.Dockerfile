@@ -36,6 +36,9 @@ RUN poetry config virtualenvs.create false && poetry install --no-interaction --
 # Download punkt_tab used in nltk
 RUN python -m nltk.downloader punkt_tab
 
+# Add the app directory to Python path
+ENV PYTHONPATH="/app:${PYTHONPATH}"
+
 # Make port 8000 available to the world outside this container
 EXPOSE 8000
 
