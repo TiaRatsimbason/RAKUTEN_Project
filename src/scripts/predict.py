@@ -14,7 +14,6 @@ from tensorflow.keras.preprocessing.image import img_to_array, load_img
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.preprocessing.text import tokenizer_from_json
 
-
 from src.scripts.features.build_features import TextPreprocessor, ImagePreprocessor
 
 # Configurer le logger
@@ -120,7 +119,6 @@ def load_predictor(version):
     with open(tokenizer_path, "r", encoding="utf-8") as json_file:
         tokenizer_config = json_file.read()
     tokenizer = tokenizer_from_json(tokenizer_config)
-
 
     # Charger les poids optimaux depuis les artefacts
     if not os.path.exists(best_weights_path):
