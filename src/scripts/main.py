@@ -10,18 +10,18 @@ from sklearn.metrics import accuracy_score
 from src.scripts.features.build_features import DataImporter, TextPreprocessor, ImagePreprocessor
 from src.scripts.models.train_model import TextLSTMModel, ImageVGG16Model, concatenate
 
-# Définir l'URI du serveur MLFlow
-mlflow.set_tracking_uri("http://mlflow-ui:5000")
-
-# Définir l'experiment dans MLFlow
-experiment_name = "Rakuten Model Training"
-mlflow.set_experiment(experiment_name)
-
-# Générer un timestamp pour rendre chaque run unique
-timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-
 
 def train_and_save_model():
+    # Définir l'URI du serveur MLFlow
+    mlflow.set_tracking_uri("http://mlflow-ui:5000")
+
+    # Définir l'experiment dans MLFlow
+    experiment_name = "Rakuten Model Training"
+    mlflow.set_experiment(experiment_name)
+
+    # Générer un timestamp pour rendre chaque run unique
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
     # Définir une session principale avec `Train Models`
     with mlflow.start_run(run_name=f"Train Models {timestamp}") as main_run:
         data_importer = DataImporter()
@@ -123,3 +123,7 @@ def train_and_save_model():
         mlflow.log_metric("concatenate_model_accuracy", accuracy)
 
     print("All models trained and saved successfully!")
+
+
+if __name__ == "__main__":
+    train_and_save_model()
