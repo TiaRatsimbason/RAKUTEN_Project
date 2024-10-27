@@ -112,6 +112,8 @@ async def evaluate_model(version: int = Query(1, description="Version number of 
 
         # Convertir les prédictions en liste
         mapped_predictions = [int(pred) for pred in predictions.values()]
+        
+        
 
         # Afficher seulement les 10 premiers échantillons pour comparaison
         print("\nComparaison des 10 premiers échantillons:")
