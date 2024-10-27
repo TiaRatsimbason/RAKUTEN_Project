@@ -58,7 +58,7 @@ class Predict:
         images = df["image_path"].apply(lambda x: self.preprocess_image(x, target_size))
         images = tf.convert_to_tensor(images.tolist(), dtype=tf.float32)
         
-        # Ajoutez ce log ici pour inspecter self.best_weights
+        # Ajoutez d'un log pour inspecter self.best_weights
         logger.info(f"best_weights: {self.best_weights} (type: {type(self.best_weights)})")
 
         # Faire les prédictions avec les modèles LSTM et VGG16
