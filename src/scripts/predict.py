@@ -3,6 +3,10 @@ import json
 import logging
 import os
 
+# Configuration du logger
+logging.basicConfig(level=logging.INFO)  # Configurer le niveau de log selon votre besoin
+logger = logging.getLogger(__name__)  # Initialiser le logger avec le nom du module
+
 import keras
 import mlflow
 import mlflow.pyfunc
@@ -33,7 +37,7 @@ class Predict:
         img_array = img_to_array(img)
         img_array = preprocess_input(img_array)
         return img_array
-
+    
     def predict(self, df, image_path_base):
         # Prétraitement des descriptions textuelles
         text_preprocessor = TextPreprocessor()
@@ -53,6 +57,9 @@ class Predict:
         target_size = (224, 224, 3)
         images = df["image_path"].apply(lambda x: self.preprocess_image(x, target_size))
         images = tf.convert_to_tensor(images.tolist(), dtype=tf.float32)
+        
+        # Ajoutez d'un log pour inspecter self.best_weights
+        logger.info(f"best_weights: {self.best_weights} (type: {type(self.best_weights)})")
 
         # Faire les prédictions avec les modèles LSTM et VGG16
         lstm_proba = self.lstm.predict([padded_sequences])
@@ -62,8 +69,8 @@ class Predict:
         concatenate_proba = (             
             self.best_weights[0] * lstm_proba + self.best_weights[1] * vgg16_proba         
         )         
-        final_predictions = np.argmax(concatenate_proba, axis=1)          
-
+        final_predictions = np.argmax(concatenate_proba, axis=1)
+        
         # Créer un mapper inverse (valeur -> clé)
         inverse_mapper = {v: k for k, v in self.mapper.items()}
 

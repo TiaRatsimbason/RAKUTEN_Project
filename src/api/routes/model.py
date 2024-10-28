@@ -2,6 +2,11 @@
 import json
 import os
 import subprocess
+import logging
+
+# Configuration du logger
+logging.basicConfig(level=logging.INFO)  # Configurer le niveau de log selon votre besoin
+logger = logging.getLogger(__name__)  # Initialiser le logger avec le nom du module
 
 # Third-party library imports
 import pandas as pd
@@ -9,7 +14,6 @@ from fastapi import APIRouter, HTTPException, Query
 from sklearn.metrics import precision_score, recall_score, f1_score
 
 from src.scripts.features.build_features import DataImporter
-from src.scripts.main import train_and_save_model
 from src.scripts.predict import load_predictor
 
 router = APIRouter()
@@ -18,12 +22,9 @@ router = APIRouter()
 @router.post("/train-model/")
 async def train_model():
     try:
-        # Execute the main.py script to train the model
-        # subprocess.run(["python", "src/scripts/main.py"], check=True)
+        from src.scripts.main import train_and_save_model
         train_and_save_model()
         return {"message": "Model training completed successfully."}
-    except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=500, detail=f"Error in training model: {e}")
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"An error occurred during model training: {e}"
@@ -48,18 +49,34 @@ async def predict(
         predictor = load_predictor(version)
 
         # Appel de la méthode de prédiction
-        predictions = predictor.predict(df, images_folder)
+        try:
+            predictions = predictor.predict(df, images_folder)
+            
+            if isinstance(predictions, dict) and "error" in predictions:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Prediction error: {predictions['error']}"
+                )
 
-        # Sauvegarder les prédictions dans un fichier JSON dans le répertoire "data/preprocessed"
-        output_path = "data/preprocessed/predictions.json"
-        with open(output_path, "w") as json_file:
-            json.dump(predictions, json_file, indent=2)
+            # Sauvegarder les prédictions dans un fichier JSON
+            output_path = "data/preprocessed/predictions.json"
+            with open(output_path, "w") as json_file:
+                json.dump(predictions, json_file, indent=2)
 
-        return {"predictions": predictions}
+            return {"predictions": predictions}
+        
+        except Exception as pred_error:
+            logger.error(f"Prediction error: {pred_error}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error during prediction process: {str(pred_error)}"
+            )
 
     except Exception as e:
+        logger.error(f"API error: {e}")
         raise HTTPException(
-            status_code=500, detail=f"An error occurred during prediction: {e}"
+            status_code=500,
+            detail=f"An error occurred: {str(e)}"
         )
 
 
@@ -72,10 +89,16 @@ async def evaluate_model(version: int = Query(1, description="Version number of 
         # Charger les données
         df = data_importer.load_data()
         _, _, X_eval, _, _, y_eval = data_importer.split_train_test(df)
+
+        # Réduction de la taille des données de test à utiliser pour l'evaluation du modèle (ici 10% des données)
         
-        # Réduction de la taille des données de test à utiliser pour l'evaluation du modèle (ici 10% des données) --> en utilisant toutes les données de test le conteneur crash
-        X_eval_sample = X_eval.sample(frac=0.1, random_state=42)
+        X_eval_sample = X_eval.sample(n=min(10, len(X_eval)), random_state=42)
         y_eval_sample = y_eval.loc[X_eval_sample.index]
+
+        print(f"X_eval_sample shape: {X_eval_sample.shape}")
+        logger.info(f"X_eval_sample before prediction: {X_eval_sample}")
+        print(f"y_eval_sample shape: {y_eval_sample.shape}")
+        logger.info(f"y_eval_sample before prediction: {y_eval_sample}")
 
         # Charger le prédicteur au démarrage de l'application
         predictor = load_predictor(version)
@@ -84,29 +107,36 @@ async def evaluate_model(version: int = Query(1, description="Version number of 
         # Prédictions avec l'échantillon réduit
         predictions = predictor.predict(X_eval_sample, "data/preprocessed/image_train")
 
-        print("Mapping")
-        with open("models/mapper.json", "r") as json_file:
-            mapper = json.load(json_file)
+        print(f"predictions type: {type(predictions)}")
+        print(f"predictions: {predictions}")
 
-        # Mapping des vraies valeurs avec l'échantillon réduit
-        mapped_y_eval = []
-        for val in y_eval_sample.values.flatten():
-            mapped_y_eval.append(mapper[f"{val}"])
+        # Convertir les prédictions en liste
+        mapped_predictions = [int(pred) for pred in predictions.values()]
+        
+        
 
-        print("Mapping predictions")
-        mapped_predictions = [str(pred) for pred in predictions.values()]
+        # Afficher seulement les 10 premiers échantillons pour comparaison
+        print("\nComparaison des 10 premiers échantillons:")
+        print(f"y_eval_sample (vraies valeurs): {y_eval_sample.values.flatten()[:10].tolist()}")
+        print(f"mapped_predictions (prédictions): {mapped_predictions[:10]}")
 
-        print("Calcul score")
+        print("\nCalcul score")
+        # Vérifier que y_true et y_pred ont le même nombre d'échantillons
+        if len(y_eval_sample) != len(mapped_predictions):
+            raise ValueError(f"Inconsistent number of samples: y_true has {len(y_eval_sample)} samples, y_pred has {len(mapped_predictions)} samples.")
+
         # Calcul des métriques avec l'échantillon réduit
         precision = precision_score(
-            mapped_y_eval, mapped_predictions, average="macro", zero_division=0
+            y_eval_sample, mapped_predictions, average="macro", zero_division=0
         )
         recall = recall_score(
-            mapped_y_eval, mapped_predictions, average="macro", zero_division=0
+            y_eval_sample, mapped_predictions, average="macro", zero_division=0
         )
         f1 = f1_score(
-            mapped_y_eval, mapped_predictions, average="macro", zero_division=0
+            y_eval_sample, mapped_predictions, average="macro", zero_division=0
         )
+
+        print(f"Precision: {precision}, Recall: {recall}, F1-Score: {f1}")
 
         # Retour des résultats d'évaluation
         return {
@@ -118,7 +148,7 @@ async def evaluate_model(version: int = Query(1, description="Version number of 
         }
 
     except Exception as e:
+        print(f"Erreur lors de l'évaluation du modèle: {e}")
         raise HTTPException(
             status_code=500, detail=f"An error occurred during model evaluation: {e}"
         )
-
