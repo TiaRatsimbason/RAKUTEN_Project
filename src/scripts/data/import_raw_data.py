@@ -1,7 +1,9 @@
-import requests
-import os
 import logging
-from check_structure import check_existing_file, check_existing_folder
+import os
+
+import requests
+
+from src.scripts.data.check_structure import check_existing_file, check_existing_folder
 
 
 def import_raw_data(raw_data_relative_path, filenames, bucket_folder_url):
