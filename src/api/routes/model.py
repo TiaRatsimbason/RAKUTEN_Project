@@ -90,7 +90,7 @@ async def evaluate_model(version: int = Query(1, description="Version number of 
         df = data_importer.load_data()
         _, _, X_eval, _, _, y_eval = data_importer.split_train_test(df)
 
-        # Réduction de la taille des données de test à utiliser pour l'evaluation du modèle (ici 10% des données)
+        # Réduction de la taille des données de test à utiliser pour l'evaluation du modèle
         
         X_eval_sample = X_eval.sample(n=min(10, len(X_eval)), random_state=42)
         y_eval_sample = y_eval.loc[X_eval_sample.index]
