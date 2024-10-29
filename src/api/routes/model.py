@@ -5,8 +5,8 @@ import subprocess
 import logging
 
 # Configuration du logger
-logging.basicConfig(level=logging.INFO)  # Configurer le niveau de log selon votre besoin
-logger = logging.getLogger(__name__)  # Initialiser le logger avec le nom du module
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Third-party library imports
 import pandas as pd
