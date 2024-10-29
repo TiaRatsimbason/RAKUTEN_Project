@@ -3,6 +3,15 @@ import json
 import os
 import subprocess
 import logging
+from fastapi import HTTPException, Query
+from pymongo import MongoClient
+from pydantic import BaseModel
+
+# Configuration MongoDB
+MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://admin:motdepasseadmin@mongo:27017/")
+client = MongoClient(MONGODB_URI)
+db = client["rakuten_db"]  # Nom de la base de données
+collection = db["model_evaluation"]  # Nom de la collection pour les évaluations
 
 # Configuration du logger
 logging.basicConfig(level=logging.INFO)  # Configurer le niveau de log selon votre besoin
@@ -90,9 +99,10 @@ async def evaluate_model(version: int = Query(1, description="Version number of 
         df = data_importer.load_data()
         _, _, X_eval, _, _, y_eval = data_importer.split_train_test(df)
 
-        # Réduction de la taille des données de test à utiliser pour l'evaluation du modèle (ici 10% des données)
-        
-        X_eval_sample = X_eval.sample(n=min(10, len(X_eval)), random_state=42)
+        # 30% d'échantillons
+        sample_size = int(len(X_eval) * 0.3)
+               
+        X_eval_sample = X_eval.sample(n=min(sample_size, len(X_eval)), random_state=42)
         y_eval_sample = y_eval.loc[X_eval_sample.index]
 
         print(f"X_eval_sample shape: {X_eval_sample.shape}")
@@ -135,6 +145,15 @@ async def evaluate_model(version: int = Query(1, description="Version number of 
         f1 = f1_score(
             y_eval_sample, mapped_predictions, average="macro", zero_division=0
         )
+
+        # Enregistrement des métriques dans MongoDB
+        evaluation_data = {
+            "model_version": version,
+            "precision": precision,
+            "recall": recall,
+            "f1_score": f1
+        }
+        collection.insert_one(evaluation_data)  # Insérer l'enregistrement dans MongoDB
 
         print(f"Precision: {precision}, Recall: {recall}, F1-Score: {f1}")
 

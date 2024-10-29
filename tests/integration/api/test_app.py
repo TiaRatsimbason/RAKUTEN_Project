@@ -109,6 +109,26 @@ async def test_predict(mocker):
 async def test_evaluate_model(mocker):
     from src.scripts import predict
 
+    # Mocking NLTK download calls
+    mocker.patch("nltk.download", return_value=None)
+
+    # Mocking MongoDB collection with insert_one
+    mock_collection = mocker.Mock()
+    mock_collection.insert_one.return_value = mocker.Mock()
+
+    # Create a mock class for MongoDB client
+    class MockMongoClient:
+        def __init__(self, *args, **kwargs):
+            pass
+        
+        def __getitem__(self, name):
+            return {"model_evaluation": mock_collection}[name]
+
+    # Patch MongoClient
+    mocker.patch("src.api.routes.model.MongoClient", MockMongoClient)
+    # Ensure the collection is available directly
+    mocker.patch("src.api.routes.model.collection", mock_collection)
+
     # Mocking mlflow.tracking.MlflowClient
     mock_mlflow_client = mocker.patch("src.scripts.predict.mlflow.tracking.MlflowClient")
     mock_client_instance = mock_mlflow_client.return_value
@@ -118,10 +138,9 @@ async def test_evaluate_model(mocker):
     # Mocking os.path.exists to always return True
     mocker.patch("os.path.exists", return_value=True)
 
-    # Mocking open to return a valid image for image paths
+    # Mocking open to return valid data
     def mock_open_image(file, *args, **kwargs):
         if 'image' in file:
-            # Créer une petite image factice en mémoire
             image = Image.new('RGB', (224, 224), color='white')
             img_byte_arr = io.BytesIO()
             image.save(img_byte_arr, format='JPEG')
@@ -138,74 +157,79 @@ async def test_evaluate_model(mocker):
 
     mocker.patch("builtins.open", side_effect=mock_open_image)
 
-    # Mocking keras.models.load_model with fake models
+    # Mocking keras models
     mock_lstm_model = mocker.Mock()
-    mock_lstm_model.predict.return_value = np.array([[0.8, 0.2], [0.4, 0.6]])  # Simulate two predictions
+    mock_lstm_model.predict.return_value = np.array([[0.8, 0.2], [0.4, 0.6]])
     mock_vgg16_model = mocker.Mock()
-    mock_vgg16_model.predict.return_value = np.array([[0.3, 0.7], [0.5, 0.5]])  # Simulate two predictions
+    mock_vgg16_model.predict.return_value = np.array([[0.3, 0.7], [0.5, 0.5]])
     mocker.patch("src.scripts.predict.keras.models.load_model", side_effect=[mock_lstm_model, mock_vgg16_model])
 
-    # Mocking tokenizer_from_json and texts_to_sequences
+    # Mocking tokenizer
     mock_tokenizer = mocker.Mock()
-    mock_tokenizer.texts_to_sequences.return_value = [[1, 2, 3]]  # Simulate tokenized output
+    mock_tokenizer.texts_to_sequences.return_value = [[1, 2, 3]]
     mocker.patch("src.scripts.predict.tokenizer_from_json", return_value=mock_tokenizer)
 
-    # Create a real Predict instance to capture logs of best_weights
-    predict_instance = predict.Predict(mock_tokenizer, mock_lstm_model, mock_vgg16_model, [0.5, 0.5], {"0": "10", "1": "20"})
-    mocker.patch("src.scripts.predict.Predict", return_value=predict_instance)
+    # Create a mock DataFrame with test data - Using 10 samples
+    df_mock = pd.DataFrame({
+        "description": ["item1desc", "item2desc"] * 5,
+        "image_path": [f"path/to/fake_image_{i}.jpg" for i in range(10)],
+        "imageid": [f"img{i}" for i in range(10)],
+        "productid": [f"prod{i}" for i in range(10)],
+        "prdtypecode": [0, 1] * 5
+    })
 
-    # Mocking DataImporter and load_data
+    # Mock DataImporter
     mock_importer = mocker.patch("src.api.routes.model.DataImporter")
     mock_importer_instance = mock_importer.return_value
-    df_mock = pd.DataFrame({
-        "description": ["item1desc", "item2desc"],
-        "image_path": ["path/to/fake_image_1.jpg", "path/to/fake_image_2.jpg"],
-        "prdtypecode": [0, 1]  # Populate with non-empty values for y_eval
-    })
     mock_importer_instance.load_data.return_value = df_mock
 
-    # Mock split_train_test to provide X_eval_sample and y_eval_sample for evaluation
+    # Mock split_train_test to return the full DataFrame for evaluation
     def mock_split_train_test(df, **kwargs):
-        X_eval_mock = df[["description", "image_path"]]
-        y_eval_mock = df["prdtypecode"]
-        X_eval_sample = X_eval_mock.iloc[:2]  # Select two rows for evaluation
-        y_eval_sample = y_eval_mock.iloc[:2]
-
-        # Debugging output to verify non-empty samples
-        print(f"Debug X_eval_sample in mock_split_train_test: {X_eval_sample}")
-        print(f"Debug y_eval_sample in mock_split_train_test: {y_eval_sample}")
-
-        return None, None, X_eval_sample, None, None, y_eval_sample
+        return None, None, df[["description", "image_path", "imageid", "productid"]], None, None, df["prdtypecode"]
 
     mock_importer_instance.split_train_test.side_effect = mock_split_train_test
+
+    # Calculate expected sample size (30% of 10 = 3)
+    expected_sample_size = int(len(df_mock) * 0.3)
+
+    # Create a fixed sample for consistent testing
+    sample_indices = [0, 1, 2]  # First 3 indices for deterministic testing
+    expected_predictions = {str(i): i % 2 for i in range(expected_sample_size)}
+
+    # Mock the sample method to always return the same indices
+    def mock_sample(*args, **kwargs):
+        result_df = df_mock.iloc[sample_indices][["description", "image_path", "imageid", "productid"]]
+        # Ensure index is reset to avoid any potential issues
+        return result_df.reset_index(drop=True)
+
+    mocker.patch.object(pd.DataFrame, 'sample', side_effect=mock_sample)
+
+    # Mock predictor with fixed predictions matching the sample size
+    mock_predictor = mocker.Mock()
+    mock_predictor.predict.return_value = expected_predictions
+    mocker.patch("src.api.routes.model.load_predictor", return_value=mock_predictor)
 
     # Mock TextPreprocessor and ImagePreprocessor
     mocker.patch("src.scripts.predict.TextPreprocessor")
     mocker.patch("src.scripts.predict.ImagePreprocessor")
 
-    # Mocking load_data to ensure X_eval_sample and y_eval_sample are passed correctly
-    _, _, X_eval_sample, _, _, y_eval_sample = mock_split_train_test(df_mock)
-
-    # Assertion to verify the non-emptiness of X_eval_sample and y_eval_sample before proceeding
-    assert not X_eval_sample.empty, "X_eval_sample is empty!"
-    assert not y_eval_sample.empty, "y_eval_sample is empty!"
-
-    # Manually override y_eval_sample if needed to ensure it is not empty
-    if y_eval_sample.empty:
-        y_eval_sample = pd.Series([0, 1])
-        print("Debug: Manually set y_eval_sample to avoid empty value.")
-
-    # Mock the evaluate_model function to use the non-empty X_eval_sample and y_eval_sample
-    mock_evaluate = mocker.patch("src.api.routes.model.evaluate_model")
-    mock_evaluate.return_value = {"evaluation_report": {"precision": 0.9, "recall": 0.8, "f1-score": 0.85}}
-
-    # Call the API to evaluate the model
+    # Call the API
     async with AsyncClient(app=app, base_url="http://test") as ac:
         response = await ac.post("/api/model/evaluate-model/", params={"version": 1})
 
     # Check the response
     assert response.status_code == 200, f"Erreur: {response.status_code}, Détails: {response.text}"
-    response_json = response.json()["evaluation_report"]
-    assert "precision" in response_json
-    assert "recall" in response_json
-    assert "f1-score" in response_json
+    evaluation_report = response.json()["evaluation_report"]
+    
+    # Verify MongoDB interaction
+    mock_collection.insert_one.assert_called_once()
+    
+    # Verify the structure of the evaluation report
+    assert "precision" in evaluation_report
+    assert "recall" in evaluation_report
+    assert "f1-score" in evaluation_report
+    
+    # Verify the metrics are float values between 0 and 1
+    assert 0 <= float(evaluation_report["precision"]) <= 1
+    assert 0 <= float(evaluation_report["recall"]) <= 1
+    assert 0 <= float(evaluation_report["f1-score"]) <= 1
