@@ -99,9 +99,9 @@ async def evaluate_model(version: int = Query(1, description="Version number of 
         df = data_importer.load_data()
         _, _, X_eval, _, _, y_eval = data_importer.split_train_test(df)
 
+
         # 30% d'échantillons
         sample_size = int(len(X_eval) * 0.3)
-               
         X_eval_sample = X_eval.sample(n=min(sample_size, len(X_eval)), random_state=42)
         y_eval_sample = y_eval.loc[X_eval_sample.index]
 
