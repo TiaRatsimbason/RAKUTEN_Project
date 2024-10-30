@@ -103,3 +103,6 @@ target/
 
 # Continue VS Code extension
 .continueignore
+
+# Poetry
+poetry.lock
