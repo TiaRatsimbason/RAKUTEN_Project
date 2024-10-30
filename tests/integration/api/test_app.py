@@ -219,17 +219,46 @@ async def test_evaluate_model(mocker):
 
     # Check the response
     assert response.status_code == 200, f"Erreur: {response.status_code}, Détails: {response.text}"
-    evaluation_report = response.json()["evaluation_report"]
-    
+    response_data = response.json()
+
+    # Verify the new response structure
+    assert "metrics" in response_data, "Response should contain 'metrics'"
+    assert "mean_inference_time_ms" in response_data, "Response should contain 'mean_inference_time_ms'"
+
+    metrics = response_data["metrics"]
+
+    # Verify metrics structure
+    assert "precision" in metrics, "Metrics should contain 'precision'"
+    assert "recall" in metrics, "Metrics should contain 'recall'"
+    assert "f1_score" in metrics, "Metrics should contain 'f1_score'"
+
+    # Verify metrics values
+    assert 0 <= float(metrics["precision"]) <= 1, "Precision should be between 0 and 1"
+    assert 0 <= float(metrics["recall"]) <= 1, "Recall should be between 0 and 1"
+    assert 0 <= float(metrics["f1_score"]) <= 1, "F1-score should be between 0 and 1"
+
+    # Verify inference time
+    assert isinstance(response_data["mean_inference_time_ms"], (int, float)), "Inference time should be numeric"
+    assert response_data["mean_inference_time_ms"] >= 0, "Inference time should be positive"
+
     # Verify MongoDB interaction
     mock_collection.insert_one.assert_called_once()
-    
-    # Verify the structure of the evaluation report
-    assert "precision" in evaluation_report
-    assert "recall" in evaluation_report
-    assert "f1-score" in evaluation_report
-    
-    # Verify the metrics are float values between 0 and 1
-    assert 0 <= float(evaluation_report["precision"]) <= 1
-    assert 0 <= float(evaluation_report["recall"]) <= 1
-    assert 0 <= float(evaluation_report["f1-score"]) <= 1
+
+    # Verify MongoDB data structure
+    mongo_call_args = mock_collection.insert_one.call_args
+    assert mongo_call_args is not None, "MongoDB insert should have been called"
+    mongo_data = mongo_call_args[0][0]
+
+    # Verify MongoDB data structure
+    assert "model_version" in mongo_data
+    assert "evaluation_date" in mongo_data
+    assert "metrics" in mongo_data
+    assert "inference_performance" in mongo_data
+    assert "mean_inference_time_ms" in mongo_data["inference_performance"]
+    assert "total_inference_time_ms" in mongo_data["inference_performance"]
+    assert "sample_size" in mongo_data["inference_performance"]
+
+    # Verify specific values
+    assert mongo_data["model_version"] == 1
+    assert isinstance(mongo_data["evaluation_date"], str)
+    assert len(mongo_data["metrics"]) == 3  # precision, recall, f1_score
