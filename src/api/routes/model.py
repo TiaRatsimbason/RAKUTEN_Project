@@ -16,6 +16,8 @@ from src.scripts.data.make_dataset import main as make_dataset_main
 import shutil
 from src.scripts.data.setup_data_cloud import create_directory_structure, copy_files_and_folders_from_drive
 import platform
+import time
+import numpy as np
 
 # Configuration MongoDB
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://admin:motdepasseadmin@mongo:27017/")
@@ -102,85 +104,52 @@ async def predict(
 @router.post("/evaluate-model/")
 async def evaluate_model(version: int = Query(1, description="Version number of the model to use")):
     try:
-        print("load data")
+        # 1. Charger et préparer les données de manière minimale
         data_importer = DataImporter()
-
-        # Charger les données
         df = data_importer.load_data()
         _, _, X_eval, _, _, y_eval = data_importer.split_train_test(df)
-
-        # 30% d'échantillons
+        
+        # Échantillonnage 30%
         sample_size = int(len(X_eval) * 0.3)
-               
         X_eval_sample = X_eval.sample(n=min(sample_size, len(X_eval)), random_state=42)
         y_eval_sample = y_eval.loc[X_eval_sample.index]
-
-        print(f"X_eval_sample shape: {X_eval_sample.shape}")
-        logger.info(f"X_eval_sample before prediction: {X_eval_sample}")
-        print(f"y_eval_sample shape: {y_eval_sample.shape}")
-        logger.info(f"y_eval_sample before prediction: {y_eval_sample}")
-
-        # Charger le prédicteur au démarrage de l'application
+        
+        # 2. Prédictions avec mesure du temps
         predictor = load_predictor(version)
-
-        print("prediction")
-        # Prédictions avec l'échantillon réduit
+        start_time = time.time()
         predictions = predictor.predict(X_eval_sample, "data/preprocessed/image_train")
-
-        print(f"predictions type: {type(predictions)}")
-        print(f"predictions: {predictions}")
-
-        # Convertir les prédictions en liste
+        inference_time = (time.time() - start_time) * 1000
+        mean_inference_time = inference_time / len(X_eval_sample)
+        
+        # 3. Calcul des métriques
         mapped_predictions = [int(pred) for pred in predictions.values()]
+        metrics = {
+            "precision": precision_score(y_eval_sample, mapped_predictions, average="macro", zero_division=0),
+            "recall": recall_score(y_eval_sample, mapped_predictions, average="macro", zero_division=0),
+            "f1_score": f1_score(y_eval_sample, mapped_predictions, average="macro", zero_division=0)
+        }
         
-        
-
-        # Afficher seulement les 10 premiers échantillons pour comparaison
-        print("\nComparaison des 10 premiers échantillons:")
-        print(f"y_eval_sample (vraies valeurs): {y_eval_sample.values.flatten()[:10].tolist()}")
-        print(f"mapped_predictions (prédictions): {mapped_predictions[:10]}")
-
-        print("\nCalcul score")
-        # Vérifier que y_true et y_pred ont le même nombre d'échantillons
-        if len(y_eval_sample) != len(mapped_predictions):
-            raise ValueError(f"Inconsistent number of samples: y_true has {len(y_eval_sample)} samples, y_pred has {len(mapped_predictions)} samples.")
-
-        # Calcul des métriques avec l'échantillon réduit
-        precision = precision_score(
-            y_eval_sample, mapped_predictions, average="macro", zero_division=0
-        )
-        recall = recall_score(
-            y_eval_sample, mapped_predictions, average="macro", zero_division=0
-        )
-        f1 = f1_score(
-            y_eval_sample, mapped_predictions, average="macro", zero_division=0
-        )
-
-        # Enregistrement des métriques dans MongoDB
-        evaluation_data = {
+        # 4. Sauvegarder dans MongoDB
+        collection.insert_one({
             "model_version": version,
-            "precision": precision,
-            "recall": recall,
-            "f1_score": f1
-        }
-        collection.insert_one(evaluation_data)  # Insérer l'enregistrement dans MongoDB
-
-        print(f"Precision: {precision}, Recall: {recall}, F1-Score: {f1}")
-
-        # Retour des résultats d'évaluation
-        return {
-            "evaluation_report": {
-                "precision": precision,
-                "recall": recall,
-                "f1-score": f1,
+            "evaluation_date": datetime.now().isoformat(),
+            "metrics": metrics,
+            "inference_performance": {
+                "mean_inference_time_ms": mean_inference_time,
+                "total_inference_time_ms": inference_time,
+                "sample_size": len(X_eval_sample)
             }
+        })
+        
+        # 5. Retourner uniquement les résultats essentiels
+        return {
+            "metrics": metrics,
+            "mean_inference_time_ms": mean_inference_time
         }
-
+        
     except Exception as e:
-        print(f"Erreur lors de l'évaluation du modèle: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"An error occurred during model evaluation: {e}"
-        )
+        logger.error(f"Model evaluation error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 class DataPipelineMetadata(BaseModel):
     execution_date: str
