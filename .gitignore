@@ -103,3 +103,34 @@ target/
 
 # Continue VS Code extension
 .continueignore
+
+# Data folders
+data/
+data/raw/
+data/preprocessed/
+docker/data/
+
+# MLflow specific
+mlruns/
+mlflow/
+mlartifacts/
+
+# Docker volumes
+docker/**/data/
+volumes/
+
+# Model files
+models/*.h5
+models/*.pkl
+models/mapper.json
+models/best_weights.json
+models/tokenizer_config.json
+
+# Temporary and processed data
+*.csv
+!requirements*.txt
+temp/
+tmp/
+
+# MongoDB data
+mongo_database-dev/
