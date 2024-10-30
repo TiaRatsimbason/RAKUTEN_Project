@@ -134,3 +134,6 @@ tmp/
 
 # MongoDB data
 mongo_database-dev/
+
+# Poetry
+poetry.lock
