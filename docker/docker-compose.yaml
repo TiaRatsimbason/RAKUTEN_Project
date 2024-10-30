@@ -39,13 +39,7 @@ services:
       MONGODB_URI: mongodb://admin:motdepasseadmin@mongo:27017/
       MLFLOW_TRACKING_URI: http://mlflow-ui:5123
       MLFLOW_ARTIFACT_URI: /app/mlruns
-      GOOGLE_DRIVE_LETTER: "G"  # Variable d'environnement pour configurer le lecteur google_drive
-      SOURCE_DATA_PATH: "/app/source_data"
     volumes:
-      # Montage du dossier data pour les sorties
-      - ./data:/app/data
-      # Montage direct du dossier contenant les données
-      - "/mnt/g/Mon Drive/molps_rakuten_data:/app/source_data:ro"
       - mlflow-artifacts:/app/mlruns
     depends_on:
       mongo:
