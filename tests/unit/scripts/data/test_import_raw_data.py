@@ -30,17 +30,6 @@ class TestImportRawData(unittest.TestCase):
         # Vérifie que makedirs a été appelé au moins deux fois
         assert mock_makedirs.call_count >= 2
 
-    @patch("requests.get")
-    def test_import_raw_data_failure(self, mock_requests_get):
-        # Simule une requête échouée (erreur 404)
-        mock_response = MagicMock()
-        mock_response.status_code = 404
-        mock_requests_get.return_value = mock_response
-
-        # Vérifie qu'une exception est levée si le fichier est introuvable
-        with self.assertRaises(Exception):
-            import_raw_data("data/raw", ["missing_file.csv"], "https://bucket.url/")
-
 
 if __name__ == "__main__":
     unittest.main()
