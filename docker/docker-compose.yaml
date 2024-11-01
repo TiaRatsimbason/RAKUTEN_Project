@@ -17,7 +17,7 @@ services:
       retries: 5
 
   mongo:
-    image: mongo:8.0.0-rc20-noble
+    image: mongo:6.0.13  # Version plus stable
     ports:
       - "27017:27017"
     environment:
@@ -71,15 +71,26 @@ services:
     build:
       context: ../
       dockerfile: docker/airflow.Dockerfile
+    user: "0:0"
     environment:
       AIRFLOW__CORE__EXECUTOR: SequentialExecutor
       AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
+      AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
+      AIRFLOW_HOME: /opt/airflow
     volumes:
       - ./dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
       - ./plugins:/opt/airflow/plugins
-    entrypoint: ["airflow", "db", "init"]
+    command: >
+      bash -c "
+        mkdir -p /opt/airflow/logs /opt/airflow/dags /opt/airflow/plugins &&
+        chmod -R 777 /opt/airflow/logs /opt/airflow/dags /opt/airflow/plugins &&
+        chown -R airflow:root /opt/airflow &&
+        airflow db init &&
+        airflow users create -e admin@example.com -f Admin -l User -p admin -r Admin -u admin
+      "
     depends_on:
       postgres:
         condition: service_healthy
@@ -95,11 +106,20 @@ services:
       AIRFLOW__CORE__EXECUTOR: SequentialExecutor
       AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
+      AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
+      AIRFLOW__CORE__LOGGING_CONFIG_CLASS: airflow.config_templates.airflow_local_settings.DEFAULT_LOGGING_CONFIG
     volumes:
-      - ./dags:/opt/airflow/dags
-      - ./logs:/opt/airflow/logs
-      - ./plugins:/opt/airflow/plugins
-    command: ["webserver"]
+      - type: bind
+        source: ./dags
+        target: /opt/airflow/dags
+      - type: bind
+        source: ./logs
+        target: /opt/airflow/logs
+      - type: bind
+        source: ./plugins
+        target: /opt/airflow/plugins
+    command: webserver
     depends_on:
       airflow-init:
         condition: service_completed_successfully
@@ -118,11 +138,20 @@ services:
       AIRFLOW__CORE__EXECUTOR: SequentialExecutor
       AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
+      AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
+      AIRFLOW__CORE__LOGGING_CONFIG_CLASS: airflow.config_templates.airflow_local_settings.DEFAULT_LOGGING_CONFIG
     volumes:
-      - ./dags:/opt/airflow/dags
-      - ./logs:/opt/airflow/logs
-      - ./plugins:/opt/airflow/plugins
-    command: ["scheduler"]
+      - type: bind
+        source: ./dags
+        target: /opt/airflow/dags
+      - type: bind
+        source: ./logs
+        target: /opt/airflow/logs
+      - type: bind
+        source: ./plugins
+        target: /opt/airflow/plugins
+    command: scheduler
     depends_on:
       airflow-init:
         condition: service_completed_successfully
@@ -130,5 +159,5 @@ services:
 
 volumes:
   mongo_database-dev:
-  mlflow-artifacts:  # Volume séparé pour les artefacts MLflow
+  mlflow-artifacts:
   postgres_database:

@@ -27,7 +27,7 @@ RUN python -m pip install --upgrade pip && \
 # Copier le reste du code de l’application
 COPY src/ /app/src/
 COPY models /app/models/
-COPY data/container/* /app/data/preprocessed/
+COPY data/preprocessed/ /app/data/preprocessed/
 
 # Télécharger les ressources NLTK nécessaires
 RUN python -m nltk.downloader punkt_tab
