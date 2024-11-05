@@ -131,7 +131,7 @@ async def evaluate_model(version: int = Query(1, description="Version number of 
         X_eval_sample = X_eval.sample(n=min(sample_size, len(X_eval)), random_state=42)
         y_eval_sample = y_eval.loc[X_eval_sample.index]
         
-        # 2. Prédictions avec mesure du temps
+        # 2. Prédictions avec mesure du tempsgit branc
         predictor = load_predictor(version)
         start_time = time.time()
         predictions = predictor.predict(X_eval_sample, "data/preprocessed/image_train")

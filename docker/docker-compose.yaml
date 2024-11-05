@@ -39,6 +39,7 @@ services:
       MONGODB_URI: mongodb://admin:motdepasseadmin@mongo:27017/
       MLFLOW_TRACKING_URI: http://mlflow-ui:5000
       MLFLOW_ARTIFACT_ROOT: file:///app/mlruns
+
     volumes:
       - mlflow-artifacts:/app/mlruns
     depends_on:
@@ -57,11 +58,12 @@ services:
       context: ../
       dockerfile: docker/mlflow-ui.Dockerfile
     ports:
-      - "5123:5000"
+      - "5001:5000"  
     environment:
       MONGODB_URI: mongodb://admin:motdepasseadmin@mongo:27017/
       MLFLOW_TRACKING_URI: sqlite:///mlflow.db
       DEFAULT_ARTIFACT_ROOT: /app/mlruns
+
     volumes:
       - mlflow-artifacts:/app/mlruns
       - mlflow-db:/app
