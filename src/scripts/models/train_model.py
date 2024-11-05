@@ -97,6 +97,55 @@ class TextLSTMModel:
 class ImageVGG16Model:
     def __init__(self):
         self.model = None
+        self.temp_handler = None
+
+    def _setup_data_generators(self, df_train, df_val, y_train, y_val):
+        """Configure les générateurs de données avec gestion GridFS"""
+        from src.scripts.data.gridfs_image_handler import GridFSImageHandler
+        
+        train_datagen = ImageDataGenerator()
+        val_datagen = ImageDataGenerator()
+
+        with GridFSImageHandler() as handler:
+            # Extraire les images temporairement
+            train_paths = handler.batch_extract_images(df_train)
+            val_paths = handler.batch_extract_images(df_val)
+            
+            # Mettre à jour les chemins dans les DataFrames
+            df_train_copy = df_train.copy()
+            df_val_copy = df_val.copy()
+            
+            df_train_copy["image_path"] = df_train_copy.apply(
+                lambda row: train_paths[f"{row['imageid']}_{row['productid']}"],
+                axis=1
+            )
+            df_val_copy["image_path"] = df_val_copy.apply(
+                lambda row: val_paths[f"{row['imageid']}_{row['productid']}"],
+                axis=1
+            )
+            
+            # Créer les générateurs
+            train_generator = train_datagen.flow_from_dataframe(
+                dataframe=df_train_copy,
+                x_col="image_path",
+                y_col="prdtypecode",
+                target_size=(224, 224),
+                batch_size=BATCH_SIZE,
+                class_mode="categorical",
+                shuffle=True
+            )
+            
+            val_generator = val_datagen.flow_from_dataframe(
+                dataframe=df_val_copy,
+                x_col="image_path",
+                y_col="prdtypecode",
+                target_size=(224, 224),
+                batch_size=BATCH_SIZE,
+                class_mode="categorical",
+                shuffle=False
+            )
+            
+            return train_generator, val_generator
 
     def preprocess_and_fit(self, X_train, y_train, X_val, y_val):
         # Log hyperparameters if not already logged
@@ -105,30 +154,13 @@ class ImageVGG16Model:
             mlflow.log_param("batch_size", BATCH_SIZE)
             mlflow.log_param("num_classes", NUM_CLASSES)
 
+        # Créer les DataFrames pour les générateurs
         df_train = pd.concat([X_train, y_train.astype(str)], axis=1)
         df_val = pd.concat([X_val, y_val.astype(str)], axis=1)
 
-        # Image Data Generators
-        train_datagen = ImageDataGenerator()
-        train_generator = train_datagen.flow_from_dataframe(
-            dataframe=df_train,
-            x_col="image_path",
-            y_col="prdtypecode",
-            target_size=(224, 224),
-            batch_size=BATCH_SIZE,
-            class_mode="categorical",
-            shuffle=True,
-        )
-
-        val_datagen = ImageDataGenerator()
-        val_generator = val_datagen.flow_from_dataframe(
-            dataframe=df_val,
-            x_col="image_path",
-            y_col="prdtypecode",
-            target_size=(224, 224),
-            batch_size=BATCH_SIZE,
-            class_mode="categorical",
-            shuffle=False,
+        # Configurer les générateurs avec GridFS
+        train_generator, val_generator = self._setup_data_generators(
+            df_train, df_val, y_train, y_val
         )
 
         # VGG16 Model
@@ -144,8 +176,13 @@ class ImageVGG16Model:
         for layer in vgg16_base.layers:
             layer.trainable = False
 
-        self.model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
+        self.model.compile(
+            optimizer="adam", 
+            loss="categorical_crossentropy", 
+            metrics=["accuracy"]
+        )
 
+        # Configuration des callbacks
         vgg_checkpoint_path = os.path.join(ARTIFACTS_DIR, "best_vgg16_model.keras")
         vgg_callbacks = [
             ModelCheckpoint(filepath=vgg_checkpoint_path, save_best_only=True),
@@ -154,9 +191,14 @@ class ImageVGG16Model:
         ]
 
         # Train the model
-        history = self.model.fit(train_generator, epochs=1, validation_data=val_generator, callbacks=vgg_callbacks)
+        history = self.model.fit(
+            train_generator,
+            epochs=1,
+            validation_data=val_generator,
+            callbacks=vgg_callbacks
+        )
 
-        # Log metrics
+        # Log metrics to MLFlow
         mlflow.log_metric("vgg16_accuracy", history.history['accuracy'][-1])
         mlflow.log_metric("vgg16_val_accuracy", history.history['val_accuracy'][-1])
         mlflow.log_metric("vgg16_loss", history.history['loss'][-1])
@@ -164,6 +206,7 @@ class ImageVGG16Model:
 
         # Log avant l'enregistrement du modèle VGG16
         logger.info("Logging VGG16 model to MLFlow")
+        
         # Log the VGG16 model
         mlflow.tensorflow.log_model(self.model, "ImageVGG16Model")
         mlflow.log_artifact("logs")
