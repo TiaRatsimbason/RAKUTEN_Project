@@ -128,7 +128,44 @@ services:
         condition: service_completed_successfully
     container_name: airflow_scheduler
 
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-storage:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin  
+      - GF_SECURITY_ADMIN_USER=admin     
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 5s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+        
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    volumes:
+      - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+
 volumes:
   mongo_database-dev:
   mlflow-artifacts:  # Volume séparé pour les artefacts MLflow
   postgres_database:
+  grafana-storage:
+  grafana-logs:
+    driver: local
+
