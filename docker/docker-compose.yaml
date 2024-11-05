@@ -163,6 +163,8 @@ services:
 
 volumes:
   mongo_database-dev:
+  mlflow-artifacts:  # Volume séparé pour les artefacts MLflow
+  postgres_database:
   grafana-storage:
   grafana-logs:
     driver: local
