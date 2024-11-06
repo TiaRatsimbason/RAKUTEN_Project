@@ -33,6 +33,21 @@ services:
       timeout: 5s
       retries: 5
 
+  compass:
+    image: mongo-express:latest
+    ports:
+      - "8081:8081"
+    environment:
+      - ME_CONFIG_MONGODB_ADMINUSERNAME=admin
+      - ME_CONFIG_MONGODB_ADMINPASSWORD=motdepasseadmin
+      - ME_CONFIG_MONGODB_SERVER=mongo
+      - ME_CONFIG_MONGODB_AUTH_DATABASE=admin
+    depends_on:
+      mongo:
+        condition: service_healthy
+    container_name: mongodb-compass
+
+
   api:
     image: rakuten-api:latest
     build:
@@ -47,7 +62,7 @@ services:
       PYTHONUNBUFFERED: 1
       LOG_LEVEL: DEBUG
       TF_ENABLE_ONEDNN_OPTS: 0
-      CUDA_VISIBLE_DEVICES: -1  # Changez à 0 si vous voulez utiliser le GPU
+      CUDA_VISIBLE_DEVICES: -1
       PYTHONHTTPSVERIFY: 0
     healthcheck:
       test: ["CMD-SHELL", "test -f /app/ready || exit 1"]
@@ -70,10 +85,10 @@ services:
       context: ../
       dockerfile: docker/mlflow-ui.Dockerfile
     ports:
-      - "5123:5000"
+      - "5000:5000"
     environment:
       MONGODB_URI: mongodb://admin:motdepasseadmin@mongo:27017/
-      MLFLOW_TRACKING_URI: http://mlflow-ui:5123
+      MLFLOW_TRACKING_URI: http://mlflow-ui:5000
       MLFLOW_ARTIFACT_URI: /app/mlruns
     volumes:
       - mlflow-artifacts:/app/mlruns

@@ -1,3 +1,8 @@
+# Exceptions pour les fichiers spécifiques dans data/
+!src/scripts/data/mongodb_data_loader.py
+!src/scripts/data/gridfs_image_handler.py
+
+
 #deep learning models
 *.h5
 

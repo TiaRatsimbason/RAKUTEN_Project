@@ -1,11 +1,24 @@
-# Standard library imports
 import json
 import os
 import subprocess
 import logging
+import asyncio
+from concurrent.futures import ProcessPoolExecutor
+import pandas as pd
+import numpy as np
+import uvloop
+import mlflow
+import keras
 from fastapi import HTTPException, Query
 from pymongo import MongoClient
 from pydantic import BaseModel
+from bson import ObjectId
+from PIL import Image
+import io
+from tensorflow.keras.preprocessing.image import img_to_array
+from tensorflow.keras.utils import to_categorical
+from sklearn.metrics import accuracy_score
+from tqdm import tqdm
 from datetime import datetime
 from src.scripts.data.import_raw_data import import_raw_data
 from src.scripts.data.make_dataset import main as make_dataset
@@ -17,7 +30,12 @@ import shutil
 from src.scripts.data.setup_data_cloud import create_directory_structure, copy_files_and_folders_from_drive
 import platform
 import time
-import numpy as np
+from src.config.mongodb import async_db, async_fs, sync_db, sync_client
+import nltk
+import ssl
+from fastapi import APIRouter
+from sklearn.metrics import precision_score, recall_score, f1_score
+from src.scripts.predict import load_predictor
 
 # Configuration MongoDB
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://admin:motdepasseadmin@mongo:27017/")
@@ -25,19 +43,78 @@ client = MongoClient(MONGODB_URI)
 db = client["rakuten_db"]  # Nom de la base de données
 collection = db["model_evaluation"]  # Nom de la collection pour les évaluations
 
+# Configuration optimale d'asyncio
+asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+
+# Configuration SSL pour NLTK
+try:
+    _create_unverified_https_context = ssl._create_unverified_context
+except AttributeError:
+    pass
+else:
+    ssl._create_default_https_context = _create_unverified_https_context
+
 # Configuration du logger
 logging.basicConfig(level=logging.INFO)  
-logger = logging.getLogger(__name__)  # Initialiser le logger avec le nom du module
-
-# Third-party library imports
-import pandas as pd
-from fastapi import APIRouter, HTTPException, Query
-from sklearn.metrics import precision_score, recall_score, f1_score
-
-from src.scripts.features.build_features import DataImporter
-from src.scripts.predict import load_predictor
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Constantes
+BATCH_SIZE = 1000
+MAX_WORKERS = os.cpu_count()
+CHUNK_SIZE = 5000
+
+
+class DataPipelineMetadata(BaseModel):
+    """Modèle Pydantic pour les métadonnées du pipeline"""
+    execution_date: str
+    raw_data_files: list = []  
+    processed_records: int
+    features_info: dict
+    status: str
+    error_message: str = ""
+    warnings: list = []
+
+class PreprocessingProgress:
+    """Classe pour suivre la progression du prétraitement"""
+    def __init__(self):
+        self.total = 0
+        self.current = 0
+        self.msg = ""
+
+    def update(self, amount, msg=""):
+        self.current += amount
+        if msg:
+            self.msg = msg
+        logger.info(f"Progress: {self.current}/{self.total} - {msg}")
+
+progress = PreprocessingProgress()
+
+def initialize_nltk():
+    """Initialise NLTK une seule fois pour tous les workers"""
+    try:
+        nltk.data.find('corpora/stopwords')
+    except LookupError:
+        nltk.download('stopwords', quiet=True)
+    try:
+        nltk.data.find('tokenizers/punkt')
+    except LookupError:
+        nltk.download('punkt', quiet=True)
+
+def process_text_chunk(chunk_data):
+    """
+    Traite un chunk de texte en utilisant le préprocesseur.
+    Pour être utilisé avec ProcessPoolExecutor.
+    """
+    try:
+        initialize_nltk()
+        text_preprocessor = TextPreprocessor()
+        text_preprocessor.preprocess_text_in_df(chunk_data, ["description"])
+        return chunk_data
+    except Exception as e:
+        logger.error(f"Error in process_text_chunk: {str(e)}")
+        raise
 
 
 @router.post("/load-data/")
@@ -116,26 +193,22 @@ async def load_data():
         )
 
 @router.get("/data-status/")
-def get_data_status():
-    """
-    Route pour vérifier si les données sont chargées dans MongoDB.
-    """
+async def get_data_status():
     try:
-        # Vérifier les collections de données tabulaires
         required_collections = {
             'preprocessed_x_train': 'Données d\'entraînement X',
             'preprocessed_x_test': 'Données de test X',
             'preprocessed_y_train': 'Labels d\'entraînement Y',
         }
         
-        existing_collections = db.list_collection_names()
+        # Utiliser le client asynchrone
+        existing_collections = await async_db.list_collection_names()
         
-        # Vérifier les collections
         collections_status = {}
         total_tabular_documents = 0
         
         for collection_name, description in required_collections.items():
-            count = db[collection_name].count_documents({}) if collection_name in existing_collections else 0
+            count = await async_db[collection_name].count_documents({}) if collection_name in existing_collections else 0
             collections_status[collection_name] = {
                 "exists": collection_name in existing_collections,
                 "count": count,
@@ -143,11 +216,11 @@ def get_data_status():
             }
             total_tabular_documents += count
             
-        # Vérifier les images dans GridFS avec distinction test/train
-        images_test_count = db.fs.files.count_documents(
+        # Vérifier les images avec le client asynchrone
+        images_test_count = await async_db.fs.files.count_documents(
             {"metadata.original_path": {"$regex": "/image_test/"}}
         )
-        images_train_count = db.fs.files.count_documents(
+        images_train_count = await async_db.fs.files.count_documents(
             {"metadata.original_path": {"$regex": "/image_train/"}}
         )
         
@@ -193,45 +266,426 @@ def get_data_status():
             status_code=500,
             detail=f"Failed to check data status: {str(e)}"
         )
+        
+@router.post("/prepare-data/")
+async def prepare_data():
+    """
+    Pipeline complet de préparation des données avec gestion des images :
+    1. Charge les données et images depuis MongoDB/GridFS
+    2. Prétraite texte et images
+    3. Split les données
+    4. Réorganise les images dans GridFS selon les splits
+    5. Stocke les données labellisées avec références aux images
+    """
+    def clean_metadata(data):
+        """Convertit les ObjectId en strings dans le dictionnaire metadata"""
+        if isinstance(data, dict):
+            return {
+                key: clean_metadata(value) if isinstance(value, (dict, list)) else str(value) 
+                if hasattr(value, '__str__') and not isinstance(value, (int, float, bool, str)) 
+                else value
+                for key, value in data.items()
+            }
+        elif isinstance(data, list):
+            return [clean_metadata(item) for item in data]
+        elif hasattr(data, '__str__') and not isinstance(data, (int, float, bool, str)):
+            return str(data)
+        return data
+    try:
+        logger.info("Starting optimized data preparation pipeline...")
+        
+        metadata = {
+            "execution_date": datetime.now().isoformat(),
+            "status": "started",
+            "error_message": "",
+            "warnings": []
+        }
+
+        # Fonction ajoutée pour vérifier les métadonnées des images
+        async def check_image_metadata():
+            train_count = await async_db.fs.files.count_documents({"metadata.split": "train"})
+            val_count = await async_db.fs.files.count_documents({"metadata.split": "validation"})
+            test_count = await async_db.fs.files.count_documents({"metadata.split": "test"})
+            
+            logger.info(f"Images in GridFS - Train: {train_count}, Val: {val_count}, Test: {test_count}")
+            
+            return train_count, val_count, test_count
+
+        # Initialiser NLTK au démarrage
+        initialize_nltk()
+
+        try:
+            # 1. Chargement optimisé des données
+            logger.info("Loading initial data...")
+            data_importer = DataImporter()
+            df = data_importer.load_data()
+            total_records = len(df)
+            progress.total = total_records
+            logger.info(f"Loaded {total_records} records")
+
+            # 2. Prétraitement parallèle du texte avec gestion d'erreurs
+            logger.info("Starting parallel text preprocessing...")
+            chunks = np.array_split(df, MAX_WORKERS)
+            
+            async def process_all_chunks():
+                try:
+                    with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                        loop = asyncio.get_event_loop()
+                        tasks = [
+                            loop.run_in_executor(executor, process_text_chunk, chunk)
+                            for chunk in chunks
+                        ]
+                        processed_chunks = await asyncio.gather(*tasks, return_exceptions=True)
+                        
+                        # Vérifier les erreurs
+                        errors = [chunk for chunk in processed_chunks if isinstance(chunk, Exception)]
+                        if errors:
+                            raise Exception(f"Errors in text preprocessing: {errors}")
+                        
+                        return pd.concat([
+                            chunk for chunk in processed_chunks 
+                            if isinstance(chunk, pd.DataFrame)
+                        ], ignore_index=True)
+                except Exception as e:
+                    logger.error(f"Error in process_all_chunks: {str(e)}")
+                    raise
+
+            # Traitement du texte
+            try:
+                df = await process_all_chunks()
+                logger.info("Text preprocessing completed successfully")
+            except Exception as text_error:
+                logger.error(f"Text preprocessing failed: {str(text_error)}")
+                raise
+
+            # 3. Split des données
+            logger.info("Performing optimized data split...")
+            try:
+                X_train, X_val, X_test, y_train, y_val, y_test = await asyncio.to_thread(
+                    data_importer.split_train_test, df
+                )
+                logger.info(f"Split completed - Train: {len(X_train)}, Val: {len(X_val)}, Test: {len(X_test)}")
+            except Exception as split_error:
+                logger.error(f"Data split failed: {str(split_error)}")
+                raise
+
+            # Création des DataFrames avec labels
+            train_data = X_train.assign(label=y_train.values)
+            val_data = X_val.assign(label=y_val.values)
+            test_data = X_test.assign(label=y_test.values)
+
+            # 4. Traitement des images
+            async def process_images_batch(batch_df, split_name):
+                """Traite un batch d'images avec gestion optimisée de la mémoire"""
+                image_mappings = {}
+                
+                # Créer les critères de recherche pour MongoDB
+                search_criteria = {
+                    "$or": []
+                }
+                
+                # Construire les critères de recherche
+                for _, row in batch_df.iterrows():
+                    search_criteria["$or"].append({
+                        "metadata.productid": str(row['productid']),
+                        "metadata.imageid": str(row['imageid'])
+                    })
+                
+                try:
+                    # Recherche optimisée dans GridFS avec logging
+                    logger.info(f"Searching for {len(search_criteria['$or'])} images in GridFS for {split_name}")
+                    cursor = async_db.fs.files.find(search_criteria)
+
+                    async for file_doc in cursor:
+                        try:
+                            product_id = file_doc["metadata"]["productid"]
+                            image_id = file_doc["metadata"]["imageid"]
+                            key = f"{product_id}_{image_id}"
+                            
+                            matching_row = batch_df[
+                                (batch_df['productid'].astype(str) == str(product_id)) & 
+                                (batch_df['imageid'].astype(str) == str(image_id))
+                            ]
+                            
+                            if not matching_row.empty:
+                                new_metadata = {
+                                    **file_doc["metadata"],
+                                    "split": split_name,
+                                    "label": int(matching_row['label'].iloc[0]),
+                                    "original_file_id": str(file_doc["_id"])
+                                }
+                                
+                                # Log pour le debugging
+                                logger.debug(f"Processing image {key} for {split_name}")
+                                
+                                chunks_cursor = async_db.fs.chunks.find(
+                                    {"files_id": file_doc["_id"]}
+                                ).sort("n", 1)
+                                
+                                chunks_data = []
+                                async for chunk in chunks_cursor:
+                                    chunks_data.append(chunk["data"])
+                                
+                                if chunks_data:
+                                    # Utiliser upload_from_stream au lieu de put
+                                    data = b"".join(chunks_data)
+                                    new_file_id = await async_fs.upload_from_stream(
+                                        filename=f"{split_name}/{key}.jpg",
+                                        source=data,
+                                        metadata=new_metadata
+                                    )
+                                    
+                                    image_mappings[key] = str(new_file_id)
+                                    logger.debug(f"Successfully processed image {key}")
+                                else:
+                                    logger.warning(f"No chunks found for image {key}")
+                                
+                        except Exception as e:
+                            logger.warning(f"Error processing image {key}: {e}")
+                            continue
+                            
+                except Exception as e:
+                    logger.error(f"Error in batch processing for {split_name}: {e}")
+                    raise
+                
+                logger.info(f"Processed {len(image_mappings)} images for {split_name}")
+                return image_mappings
+
+            async def process_split_images(split_data, split_name):
+                """Traite toutes les images d'un split en parallèle par batches"""
+                try:
+                    all_mappings = {}
+                    batches = np.array_split(split_data, max(1, len(split_data) // CHUNK_SIZE))
+                    
+                    for i, batch in enumerate(batches):
+                        logger.info(f"Processing {split_name} images batch {i+1}/{len(batches)}")
+                        batch_mappings = await process_images_batch(batch, split_name)
+                        all_mappings.update(batch_mappings)
+                        
+                    return all_mappings
+                except Exception as e:
+                    logger.error(f"Error processing split {split_name}: {e}")
+                    raise
+
+            # Traitement parallèle des images avec vérification ajoutée
+            logger.info("Processing images for all splits in parallel...")
+            try:
+                train_mappings, val_mappings, test_mappings = await asyncio.gather(
+                    process_split_images(train_data, "train"),
+                    process_split_images(val_data, "validation"),
+                    process_split_images(test_data, "test")
+                )
+                
+                # Vérification des mappings
+                logger.info(f"Image mappings created - Train: {len(train_mappings)}, Val: {len(val_mappings)}, Test: {len(test_mappings)}")
+                
+                if not train_mappings and not val_mappings and not test_mappings:
+                    logger.error("No images were processed successfully")
+                    raise Exception("Failed to process any images")
+                    
+            except Exception as image_error:
+                logger.error(f"Image processing failed: {str(image_error)}")
+                raise
+
+# 5. Stockage MongoDB
+            async def prepare_and_insert_records(data, mappings, collection_name):
+                try:
+                    records = []
+                    for _, row in data.iterrows():
+                        key = f"{row['productid']}_{row['imageid']}"
+                        record = row.to_dict()
+                        record['gridfs_file_id'] = mappings.get(key)
+                        records.append(record)
+                    
+                    for i in range(0, len(records), BATCH_SIZE):
+                        batch = records[i:i + BATCH_SIZE]
+                        await async_db[collection_name].insert_many(batch)
+                        logger.info(f"Inserted {len(batch)} records in {collection_name}")
+                    
+                    return len(records)
+                except Exception as e:
+                    logger.error(f"Error in prepare_and_insert_records for {collection_name}: {e}")
+                    raise
+
+            # Stockage parallèle
+            logger.info("Performing parallel MongoDB storage...")
+            try:
+                collections_to_drop = ['labeled_train', 'labeled_val', 'labeled_test']
+                await asyncio.gather(*[
+                    async_db[col].drop() 
+                    for col in collections_to_drop 
+                    if col in await async_db.list_collection_names()
+                ])
+                
+                train_count, val_count, test_count = await asyncio.gather(
+                    prepare_and_insert_records(train_data, train_mappings, 'labeled_train'),
+                    prepare_and_insert_records(val_data, val_mappings, 'labeled_val'),
+                    prepare_and_insert_records(test_data, test_mappings, 'labeled_test')
+                )
+            except Exception as storage_error:
+                logger.error(f"MongoDB storage failed: {str(storage_error)}")
+                raise
+
+            # 6. Création des index
+            logger.info("Creating indexes in parallel...")
+            try:
+                index_operations = [
+                    async_db['labeled_train'].create_index([("productid", 1)]),
+                    async_db['labeled_train'].create_index([("imageid", 1)]),
+                    async_db['labeled_train'].create_index([("gridfs_file_id", 1)]),
+                    async_db['labeled_val'].create_index([("productid", 1)]),
+                    async_db['labeled_val'].create_index([("imageid", 1)]),
+                    async_db['labeled_val'].create_index([("gridfs_file_id", 1)]),
+                    async_db['labeled_test'].create_index([("productid", 1)]),
+                    async_db['labeled_test'].create_index([("imageid", 1)]),
+                    async_db['labeled_test'].create_index([("gridfs_file_id", 1)])
+                ]
+                await asyncio.gather(*index_operations)
+            except Exception as index_error:
+                logger.error(f"Index creation failed: {str(index_error)}")
+                raise
+
+            # Vérifier les images dans GridFS
+            train_count, val_count, test_count = await check_image_metadata()
+
+            # 7. Mise à jour des métadonnées
+            metadata.update({
+                "status": "completed",
+                "processed_records": {
+                    "total": total_records,
+                    "train": train_count,
+                    "val": val_count,
+                    "test": test_count
+                },
+                "image_statistics": {
+                    "train": train_count,
+                    "val": val_count,
+                    "test": test_count
+                },
+                "data_distribution": {
+                    "train": {str(k): v for k, v in train_data.label.value_counts().to_dict().items()},
+                    "val": {str(k): v for k, v in val_data.label.value_counts().to_dict().items()},
+                    "test": {str(k): v for k, v in test_data.label.value_counts().to_dict().items()}
+                },
+                "storage_info": {
+                    "collections": {
+                        "train": "labeled_train",
+                        "val": "labeled_val",
+                        "test": "labeled_test"
+                    },
+                    "gridfs": {
+                        "splits": ["train", "validation", "test"],
+                        "image_format": "image/jpeg",
+                        "metadata_fields": ["split", "label", "productid", "imageid"]
+                    }
+                }
+            })
+
+            await async_db['pipeline_metadata'].insert_one(metadata)
+
+            logger.info("Data preparation pipeline completed successfully")
+            
+            def clean_metadata(data):
+                """Convertit les ObjectId en strings dans le dictionnaire metadata"""
+                if isinstance(data, dict):
+                    return {
+                        key: clean_metadata(value) if isinstance(value, (dict, list)) else str(value) 
+                        if hasattr(value, '__str__') and not isinstance(value, (int, float, bool, str)) 
+                        else value
+                        for key, value in data.items()
+                    }
+                elif isinstance(data, list):
+                    return [clean_metadata(item) for item in data]
+                elif hasattr(data, '__str__') and not isinstance(data, (int, float, bool, str)):
+                    return str(data)
+                return data
+
+            # Nettoyer les ObjectId avant de retourner la réponse
+            metadata = clean_metadata(metadata)
+            return {
+                "message": "Data preparation completed successfully",
+                "metadata": metadata
+            }
+
+        except Exception as e:
+            logger.error(f"Error during pipeline execution: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error during pipeline execution: {str(e)}"
+            )
+
+    except Exception as e:
+        error_message = str(e)
+        logger.error(f"Pipeline error: {error_message}", exc_info=True)
+        metadata.update({
+            "status": "failed",
+            "error_message": error_message
+        })
+        
+        # Nettoyer les metadata avant de les enregistrer
+        clean_metadata_for_db = clean_metadata(metadata)
+        await async_db['pipeline_metadata'].insert_one(clean_metadata_for_db)
+        
+        raise HTTPException(
+            status_code=500,
+            detail=f"Pipeline error: {error_message}"
+        )
     
 @router.post("/train-model/")
 async def train_model():
+    """
+    Route pour l'entraînement du modèle utilisant les données labellisées de MongoDB.
+    """
     try:
+        logger.info("Starting model training...")
         from src.scripts.main import train_and_save_model
-        train_and_save_model()
-        return {"message": "Model training completed successfully."}
+        
+        try:
+            train_and_save_model()
+            logger.info("Model training completed successfully")
+            return {"message": "Model training completed successfully"}
+            
+        except Exception as training_error:
+            logger.error("Training error details:", exc_info=True)
+            error_details = {
+                "error_type": type(training_error).__name__,
+                "error_message": str(training_error),
+                "error_location": "training process"
+            }
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Training process failed: {error_details}"
+            )
+            
     except Exception as e:
+        logger.error("API endpoint error:", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"An error occurred during model training: {e}"
+            status_code=500, 
+            detail=f"An error occurred during model training: {str(e)}"
+        )
+            
+    except Exception as e:
+        logger.error("API endpoint error:", exc_info=True)
+        raise HTTPException(
+            status_code=500, 
+            detail=f"An error occurred during model training: {str(e)}"
         )
 
 
 @router.post("/predict/")
-async def predict(
-    images_folder: str = Query("data/preprocessed/image_test", description="Path to the folder containing images"),
-    version: int = Query(1, description="Version number of the model to use")
-):
+async def predict(version: int = Query(1, description="Version number of the model to use")):
     try:
         # Utiliser MongoDB pour charger les données de test
-        data_importer = DataImporter(use_mongodb=True)
-        
-        # Lire les données de test depuis MongoDB
-        try:
-            x_test = pd.DataFrame(list(data_importer.db.preprocessed_x_test.find({}, {'_id': 0})))[:10]
-        except Exception as mongo_error:
-            logger.error(f"MongoDB error: {mongo_error}")
-            # Fallback vers le fichier CSV si MongoDB échoue
-            file_path = "data/preprocessed/X_test_update.csv"
-            if not os.path.exists(file_path):
-                raise HTTPException(status_code=404, detail="Test data not found")
-            x_test = pd.read_csv(file_path)[:10]
+        logger.info("Loading test data...")
+        df = pd.DataFrame(list(sync_db.preprocessed_x_test.find({}, {'_id': 0})))[:10]
+        logger.info(f"Loaded {len(df)} test samples")
 
         # Charger le prédicteur
         predictor = load_predictor(version)
 
-        # Appel de la méthode de prédiction
+        # Appel de la méthode de prédiction avec image_type="test"
         try:
-            predictions = predictor.predict(x_test, images_folder)
+            predictions = predictor.predict(df, image_type="test")  # Spécifier image_type="test"
             
             if isinstance(predictions, dict) and "error" in predictions:
                 raise HTTPException(
@@ -240,21 +694,14 @@ async def predict(
                 )
 
             # Sauvegarder les prédictions dans MongoDB
-            try:
-                db["predictions"].insert_one({
-                    "version": version,
-                    "date": datetime.now().isoformat(),
-                    "predictions": predictions
-                })
-            except Exception as mongo_error:
-                logger.warning(f"Failed to save predictions to MongoDB: {mongo_error}")
-                # Fallback vers JSON si MongoDB échoue
-                output_path = "data/preprocessed/predictions.json"
-                with open(output_path, "w") as json_file:
-                    json.dump(predictions, json_file, indent=2)
+            await async_db["predictions"].insert_one({
+                "version": version,
+                "date": datetime.now().isoformat(),
+                "predictions": predictions
+            })
 
             return {"predictions": predictions}
-        
+            
         except Exception as pred_error:
             logger.error(f"Prediction error: {pred_error}")
             raise HTTPException(
@@ -278,7 +725,7 @@ async def evaluate_model(version: int = Query(1, description="Version number of 
         try:
             # Chargement et préparation des données avec MongoDB
             logger.info("Loading and preparing data...")
-            data_importer = DataImporter(use_mongodb=True)
+            data_importer = DataImporter()
             
             # Utiliser le chargement par chunks pour les gros fichiers
             df = data_importer.load_data()
@@ -325,7 +772,7 @@ async def evaluate_model(version: int = Query(1, description="Version number of 
                 end_idx = min((batch_idx + 1) * BATCH_SIZE, len(X_eval_sample))
                 
                 batch = X_eval_sample.iloc[start_idx:end_idx]
-                batch_predictions = predictor.predict(batch, image_path)
+                batch_predictions = predictor.predict(batch, image_type="train")
                 predictions.update(batch_predictions)
                 
                 # Log de progression
@@ -422,141 +869,4 @@ async def evaluate_model(version: int = Query(1, description="Version number of 
         raise HTTPException(
             status_code=500,
             detail=f"An unexpected error occurred: {str(e)}"
-        )
-
-class DataPipelineMetadata(BaseModel):
-    execution_date: str
-    raw_data_files: list = []  # Rendre optionnel avec une liste vide par défaut
-    processed_records: int
-    features_info: dict
-    status: str
-    error_message: str = ""
-    warnings: list = []
-
-@router.post("/prepare-data/")
-async def prepare_data():
-    """
-    Exécute le pipeline de préparation des données :
-    1. Charge les données prétraitées
-    2. Construit les features
-    3. Stocke les métadonnées dans MongoDB
-    """
-    try:
-        # Liste des fichiers prétraités
-        preprocessed_files = [
-            "X_test_update.csv",
-            "X_train_update.csv",
-            "Y_train_CVw08PX.csv",
-            "image_test",
-            "image_train"
-        ]
-
-        metadata = {
-            "execution_date": datetime.now().isoformat(),
-            "raw_data_files": preprocessed_files,  # Ajouter la liste des fichiers
-            "processed_records": 0,
-            "features_info": {},
-            "status": "started",
-            "error_message": "",
-            "warnings": []
-        }
-
-        logger.info("Loading preprocessed data...")
-
-        # Charger directement les données prétraitées
-        data_importer = DataImporter("/app/data/preprocessed")
-        df = data_importer.load_data()
-        
-        # Prétraitement
-        text_preprocessor = TextPreprocessor()
-        text_preprocessor.preprocess_text_in_df(df, ["description"])
-        
-        image_preprocessor = ImagePreprocessor()
-        image_preprocessor.preprocess_images_in_df(df)
-
-        # Split des données
-        X_train, X_val, X_test, y_train, y_val, y_test = data_importer.split_train_test(df)
-
-        def convert_keys_to_str(d):
-            if isinstance(d, dict):
-                return {str(k): convert_keys_to_str(v) for k, v in d.items()}
-            return d
-
-        # Mettre à jour les métadonnées
-        metadata.update({
-            "processed_records": len(df),
-            "features_info": {
-                "training_samples": len(X_train),
-                "validation_samples": len(X_val),
-                "test_samples": len(X_test),
-                "features": list(X_train.columns),
-                
-                "labels_info": {
-                    "train_labels": {
-                        "count": len(y_train),
-                        "unique_classes": len(y_train.unique()),
-                        "class_distribution": convert_keys_to_str(y_train.value_counts().to_dict())
-                    },
-                    "val_labels": {
-                        "count": len(y_val),
-                        "unique_classes": len(y_val.unique()),
-                        "class_distribution": convert_keys_to_str(y_val.value_counts().to_dict())
-                    },
-                    "test_labels": {
-                        "count": len(y_test),
-                        "unique_classes": len(y_test.unique()),
-                        "class_distribution": convert_keys_to_str(y_test.value_counts().to_dict())
-                    }
-                },
-                
-                "data_split_info": {
-                    "train": {
-                        "X_shape": list(X_train.shape),
-                        "y_shape": list(y_train.shape)
-                    },
-                    "val": {
-                        "X_shape": list(X_val.shape),
-                        "y_shape": list(y_val.shape)
-                    },
-                    "test": {
-                        "X_shape": list(X_test.shape),
-                        "y_shape": list(y_test.shape)
-                    }
-                }
-            },
-            "status": "completed"
-        })
-
-        # Sauvegarder dans MongoDB
-        try:
-            metadata_safe = convert_keys_to_str(metadata)
-            pipeline_metadata = DataPipelineMetadata(**metadata_safe)
-            db["data_pipeline"].insert_one(pipeline_metadata.dict())
-        except Exception as mongo_error:
-            logger.error(f"Failed to save metadata to MongoDB: {str(mongo_error)}")
-            raise
-
-        logger.info("Data pipeline completed successfully")
-        return {
-            "message": "Data pipeline completed successfully",
-            "metadata": pipeline_metadata.dict()
-        }
-
-    except Exception as e:
-        error_message = str(e)
-        logger.error(f"Pipeline error: {error_message}")
-        metadata.update({
-            "status": "failed",
-            "error_message": error_message
-        })
-        
-        try:
-            pipeline_metadata = DataPipelineMetadata(**metadata)
-            db["data_pipeline"].insert_one(pipeline_metadata.dict())
-        except Exception as mongo_error:
-            logger.error(f"Failed to save metadata to MongoDB: {str(mongo_error)}")
-
-        raise HTTPException(
-            status_code=500,
-            detail=f"An error occurred during data pipeline execution: {error_message}"
         )

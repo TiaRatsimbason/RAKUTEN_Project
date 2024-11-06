@@ -1,7 +1,7 @@
 import os
-import gridfs
-from motor.motor_asyncio import AsyncIOMotorClient
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 from pymongo import MongoClient
+import gridfs
 
 # Configuration MongoDB
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://admin:motdepasseadmin@mongo:27017/")
@@ -17,4 +17,4 @@ sync_db = sync_client[DB_NAME]
 
 # GridFS pour les images
 sync_fs = gridfs.GridFS(sync_db)
-async_fs = gridfs.AsyncIOMotorGridFS(async_db)
+async_fs = AsyncIOMotorGridFSBucket(async_db)
