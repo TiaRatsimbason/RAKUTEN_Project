@@ -7,9 +7,8 @@ from flask import request, jsonify
 BRANCH_TO_MONITOR = "master"
 
 
-# CMD: ngrok http http://localhost:8080
-# url: https://YWRtaW46YWRtaW4=@sharing-loudly-mongrel.ngrok-free.app/api/v1/dags/github_branch_monitor/dagRuns
-
+# CMD: ngrok ngrok http --url=sharing-loudly-mongrel.ngrok-free.app 8080
+# url: https://admin:admin@sharing-loudly-mongrel.ngrok-free.app/api/v1/dags/github_branch_monitor/dagRuns
 def github_webhook_listener():
     """
     This function listens for the GitHub webhook trigger.
