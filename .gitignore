@@ -1,8 +1,3 @@
-# Exceptions pour les fichiers spécifiques dans data/
-!src/scripts/data/mongodb_data_loader.py
-!src/scripts/data/gridfs_image_handler.py
-
-
 #deep learning models
 *.h5
 
@@ -111,6 +106,9 @@ target/
 
 # Data folders
 data/
+!src/scripts/data/
+!src/scripts/data/mongodb_data_loader.py
+!src/scripts/data/gridfs_image_handler.py
 data/raw/
 data/preprocessed/
 docker/data/
@@ -142,3 +140,7 @@ mongo_database-dev/
 
 # Poetry
 poetry.lock
+
+# Exceptions pour les fichiers spécifiques dans data/
+!src/scripts/data/mongodb_data_loader.py
+!src/scripts/data/gridfs_image_handler.py
