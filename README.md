@@ -58,7 +58,7 @@ Once you have downloaded the GitHub repository, open a WSL terminal at the root 
 
 > `python src/scripts/data/import_raw_data.py` <- It will import the tabular data on data/raw/
 
-> Upload the image data folder set directly on local from https://challengedata.ens.fr/participants/challenges/35/, you should save the folders image_train and image_test respecting the following structure
+> Upload the raw data folder set directly on local from (https://drive.google.com/drive/home?hl=fr-FR) with this credentials (projetmlops@gmail.com : MLOps@Rakuten), it will be on Mon Drive/MLOps_Rakuten_data/
 
     ├── data
     │   └── raw
