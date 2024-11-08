@@ -76,7 +76,7 @@ Once you have downloaded the GitHub repository and the data following the instru
 
 > `[http://localhost:8000/docs]` <- You can access the FastAPI documentation at this address once all containers are available and healthy (except for airflow-init)
 
-> `python src/scripts/main.py` <- It will train the models on the dataset and save them in models. By default, the number of epochs = 1
+> `[http://localhost:8081/db/rakuten_db/]` <- You can look at the content of the database by going to this address and using these credentials: admin:pass
 
 > `python src/scripts/predict.py` <- It will use the trained models to make a prediction (of the prdtypecode) on the desired data, by default, it will predict on the train. You can pass the path to data and images as arguments if you want to change it
 
