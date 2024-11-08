@@ -47,9 +47,9 @@ Once you have downloaded the GitHub repository, open a WSL terminal at the root 
 
 > `docker-compose -f docker/docker-compose.yaml --env-file .env.dev up -d` <- This will start the containers
 
-> `conda install pip` <- May be optionnal
+> `docker-compose -f docker/docker-compose.yaml down` <- This will stop the containers
 
-> `python -m pip install -U pip` <- Upgrade to the latest available version of pip
+> `docker-compose -f docker/docker-compose.yaml down -v` <- This will erase the volumes
 
 | Environnement Windows | Environnement MacOS ou Linux |
 |:----------------------|:-----------------------------|
