@@ -74,7 +74,7 @@ Once you have downloaded the GitHub repository and the data following the instru
         └── Y_train_CvvW08PX.csv
 ---
 
-> `python src/scripts/data/make_dataset.py data/raw data/preprocessed` <- It will copy the raw dataset and paste it on data/preprocessed/
+> `[http://localhost:8000/docs]` <- You can access the FastAPI documentation at this address once all containers are available and healthy (except for airflow-init)
 
 > `python src/scripts/main.py` <- It will train the models on the dataset and save them in models. By default, the number of epochs = 1
 
