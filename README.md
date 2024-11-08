@@ -58,7 +58,11 @@ Once you have downloaded the GitHub repository, open a WSL terminal at the root 
 
 > `python src/scripts/data/import_raw_data.py` <- It will import the tabular data on data/raw/
 
-> Upload the raw data folder set directly on local from (https://drive.google.com/drive/home?hl=fr-FR) with this credentials (projetmlops@gmail.com : MLOps@Rakuten), it will be on Mon Drive/MLOps_Rakuten_data/
+> Download the raw data folder from Google Drive (https://drive.google.com/drive/home?hl=fr-FR) using these credentials:
+>  * Email: projetmlops@gmail.com
+>  * Password: MLOps@Rakuten
+
+>  The data folder is located in 'My Drive/MLOps_Rakuten_data/'
 
     ├── data
     │   └── raw
