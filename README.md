@@ -56,18 +56,21 @@ Once you have downloaded the GitHub repository, open a WSL terminal at the root 
 | `pip install -r requirements_win.txt` | `pip install -r requirements_linux_macos.txt` |
 | ↳ Installe les packages requis | ↳ Installe les packages requis |
 
-> `python src/scripts/data/import_raw_data.py` <- It will import the tabular data on data/raw/
 
-> Download the raw data folder from Google Drive (https://drive.google.com/drive/home?hl=fr-FR) using these credentials:
+> Download the data folder from Google Drive (https://drive.google.com/drive/home?hl=fr-FR) using these credentials:
 >  * Email: projetmlops@gmail.com
 >  * Password: MLOps@Rakuten
-
+>  
 >  The data folder is located in 'My Drive/MLOps_Rakuten_data/'
+>  You need to place the content in the data/preprocessed folder
 
-    ├── data
-    │   └── raw
-    |   |  ├── image_train
-    |   |  ├── image_test
+data
+└── preprocessed
+    ├── image_test
+    ├── image_train
+    ├── X_test_update.csv
+    ├── X_train_update.csv
+    └── Y_train_CvvW08PX.csv
 
 > `python src/scripts/data/make_dataset.py data/raw data/preprocessed` <- It will copy the raw dataset and paste it on data/preprocessed/
 
