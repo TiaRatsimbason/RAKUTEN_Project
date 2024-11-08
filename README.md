@@ -64,13 +64,14 @@ Once you have downloaded the GitHub repository, open a WSL terminal at the root 
 >  The data folder is located in 'My Drive/MLOps_Rakuten_data/'
 >  You need to place the content in the data/preprocessed folder
 
-data
-└── preprocessed
-    ├── image_test
-    ├── image_train
-    ├── X_test_update.csv
-    ├── X_train_update.csv
-    └── Y_train_CvvW08PX.csv
+    data
+    └── preprocessed
+        ├── image_test
+        ├── image_train
+        ├── X_test_update.csv
+        ├── X_train_update.csv
+        └── Y_train_CvvW08PX.csv
+---
 
 > `python src/scripts/data/make_dataset.py data/raw data/preprocessed` <- It will copy the raw dataset and paste it on data/preprocessed/
 
