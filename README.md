@@ -62,7 +62,8 @@ Once you have downloaded the GitHub repository, open a WSL terminal at the root 
 >  * Password: MLOps@Rakuten
 >  
 >  The data folder is located in 'My Drive/MLOps_Rakuten_data/'
->  You need to place the content in the data/preprocessed folder
+> 
+>  You need to place the content in the ~/juin24cmlops_rakuten_2/data/preprocessed folder
 
     data
     └── preprocessed
