@@ -41,11 +41,11 @@ This project is a starting Pack for MLOps projects based on the subject "movie_r
         └── unit
 ---
 
-Once you have downloaded the github repo, open the anaconda powershell on the root of the project and follow those instructions :
+Once you have downloaded the GitHub repository, open a WSL terminal at the root of the project folder and run the following commands:
 
-> `conda create -n "Rakuten-project" python==3.10.14` <- It will create your conda environement with python 3.10.14
+> `docker-compose -f docker/docker-compose.yaml build` <- This will build the container images
 
-> `conda activate Rakuten-project` <- It will activate your environment
+> `docker-compose -f docker/docker-compose.yaml --env-file .env.dev up -d` <- This will start the containers
 
 > `conda install pip` <- May be optionnal
 
