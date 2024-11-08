@@ -41,7 +41,7 @@ This project is a starting Pack for MLOps projects based on the subject "movie_r
         └── unit
 ---
 
-Once you have downloaded the GitHub repository and the data following the instructions below, open a WSL terminal at the root of the project folder and run the following commands:
+Once you have downloaded the GitHub repository and the data following the instructions below, open a WSL terminal at the root of the project folder and you can run the following commands:
 
 > `docker-compose -f docker/docker-compose.yaml build` <- This will build the container images
 
