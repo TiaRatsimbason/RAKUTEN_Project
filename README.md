@@ -41,7 +41,7 @@ This project is a starting Pack for MLOps projects based on the subject "movie_r
         └── unit
 ---
 
-Once you have downloaded the GitHub repository and the data following the instructions below, open a WSL terminal at the root of the project folder and you can run the following commands:
+Once you have downloaded the GitHub repository and the data (required before running container) following the instructions below, open a WSL terminal at the root of the project folder and you can run the following commands:
 
 > `docker-compose -f docker/docker-compose.yaml build` <- This will build the container images
 
@@ -63,7 +63,7 @@ Once you have downloaded the GitHub repository and the data following the instru
 >  
 >  The data folder is located in 'My Drive/MLOps_Rakuten_data/'
 > 
->  You need to place the content in the ~/juin24cmlops_rakuten_2/data/preprocessed folder
+>  You need to place the content in the '~/juin24cmlops_rakuten_2/data/preprocessed' folder
 
     data
     └── preprocessed
@@ -77,6 +77,20 @@ Once you have downloaded the GitHub repository and the data following the instru
 > `[http://localhost:8000/docs]` <- You can access the FastAPI documentation at this address once all containers are available and healthy (except for airflow-init)
 
 > `[http://localhost:8081/db/rakuten_db/]` <- You can look at the content of the database by going to this address and using these credentials: admin:pass
+>
+> `[http://localhost:5000/]` <- You can take a look at the different training experiments and model versions in the MLflow UI by accessing this URL
+>
+> Regarding workflow automation, there is Airflow, but to access the web client, you need to create a user with the admin role. Therefore, you need to be able to execute a command in the Airflow container. To do this, you need to execute this command in the WSL terminal: 'docker exec -it airflow bash' and then on the command line that opens, you need to enter:
+`airflow users create 
+--username airflow 
+--firstname airflow 
+--lastname airflow 
+--role Admin 
+--email user@airflow.fr 
+--password essai@airflow`
+> which will give you the credentials to log in into Airflow UI: `airflow:essai@airflow`
+>
+> `[http://localhost:8080/]` <- You can access the Airflow UI  at this address
 
 > `python src/scripts/predict.py` <- It will use the trained models to make a prediction (of the prdtypecode) on the desired data, by default, it will predict on the train. You can pass the path to data and images as arguments if you want to change it
 
