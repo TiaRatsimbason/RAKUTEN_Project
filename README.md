@@ -75,19 +75,21 @@ Once you have downloaded the GitHub repository and the data (required before run
 ---
 
 > `[http://localhost:8000/docs]` <- You can access the FastAPI documentation at this address once all containers are available and healthy (except for airflow-init)
-
+>
 > `[http://localhost:8081/db/rakuten_db/]` <- You can look at the content of the database by going to this address and using these credentials: admin:pass
 >
 > `[http://localhost:5000/]` <- You can take a look at the different training experiments and model versions in the MLflow UI by accessing this URL
 >
 > Regarding workflow automation, there is Airflow, but to access the web client, you need to create a user with the admin role. Therefore, you need to be able to execute a command in the Airflow container. To do this, you need to execute this command in the WSL terminal: 'docker exec -it airflow bash' and then on the command line that opens, you need to enter:
-`airflow users create 
---username airflow 
---firstname airflow 
---lastname airflow 
---role Admin 
---email user@airflow.fr 
---password essai@airflow`
+> 
+    `airflow users create 
+    --username airflow 
+    --firstname airflow 
+    --lastname airflow 
+    --role Admin 
+    --email user@airflow.fr 
+    --password essai@airflow`
+>
 > which will give you the credentials to log in into Airflow UI: `airflow:essai@airflow`
 >
 > `[http://localhost:8080/]` <- You can access the Airflow UI  at this address
