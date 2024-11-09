@@ -81,19 +81,15 @@ target/
 # Jupyter NB Checkpoints
 .ipynb_checkpoints/
 
-# exclude data from source control by default
+# Data folders - Simplified rules
 /data/*
+!src/
 !src/scripts/
-src/scripts/data/*
+!src/scripts/data/
 !src/scripts/data/mongodb_data_loader.py
 !src/scripts/data/gridfs_image_handler.py
 
-# Supprimer toutes les autres règles data redondantes
-# /data/
-# data/
-# data/raw/
-# data/preprocessed/
-# docker/data/
+# Remove all other data related rules
 
 # Mac OS-specific storage files
 .DS_Store

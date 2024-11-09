@@ -1,5 +1,6 @@
 import json
 import os
+import gc
 import subprocess
 import logging
 import asyncio
@@ -647,25 +648,27 @@ async def train_model():
 @router.post("/predict/")
 async def predict(version: int = Query(1, description="Version number of the model to use")):
     try:
-        # Utiliser MongoDB pour charger les données de test
-        logger.info("Loading test data...")
-        df = pd.DataFrame(list(sync_db.labeled_test.find()))[:10]
+        # Utiliser MongoDB pour charger les données de test non étiquetées
+        logger.info("Loading test data from 'preprocessed_x_test' collection...")
+        df = pd.DataFrame(list(sync_db.preprocessed_x_test.find())).head(10)  # Limiter à 10 pour l'exemple
         logger.info(f"Loaded {len(df)} test samples")
 
-        # Vérifier que 'gridfs_file_id' est présent
-        if 'gridfs_file_id' not in df.columns:
+        # Vérifier que 'productid' et 'imageid' sont présents pour récupérer les images
+        required_columns = ['productid', 'imageid', 'description']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
             raise HTTPException(
                 status_code=400,
-                detail="The 'gridfs_file_id' column is missing in the test data"
+                detail=f"Missing required columns in test data: {missing_columns}"
             )
 
         # Charger le prédicteur
         predictor = load_predictor(version)
 
-        # Appel de la méthode de prédiction sans image_type
+        # Appel de la méthode de prédiction
         try:
             predictions = predictor.predict(df)
-            
+
             if isinstance(predictions, dict) and "error" in predictions:
                 raise HTTPException(
                     status_code=500,
@@ -680,7 +683,7 @@ async def predict(version: int = Query(1, description="Version number of the mod
             })
 
             return {"predictions": predictions}
-            
+
         except Exception as pred_error:
             logger.error(f"Prediction error: {pred_error}")
             raise HTTPException(
@@ -694,6 +697,7 @@ async def predict(version: int = Query(1, description="Version number of the mod
             status_code=500,
             detail=f"An error occurred: {str(e)}"
         )
+
 
 @router.post("/evaluate-model/")
 async def evaluate_model(version: int = Query(1, description="Version number of the model to use")):

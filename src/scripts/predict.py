@@ -40,15 +40,15 @@ class Predict:
             if df is None or len(df) == 0:
                 raise ValueError("Empty or null DataFrame provided")
                 
-            required_columns = ["description", "gridfs_file_id"]  # Utiliser gridfs_file_id
-            missing_columns = [col for col in required_columns if col not in df.columns]
-            if missing_columns:
-                raise ValueError(f"Missing required columns: {missing_columns}")
+            required_text_columns = ["description"]
+            missing_text_columns = [col for col in required_text_columns if col not in df.columns]
+            if missing_text_columns:
+                raise ValueError(f"Missing required text columns: {missing_text_columns}")
 
             # Vérifier les valeurs nulles
-            null_counts = df[required_columns].isnull().sum()
+            null_counts = df[required_text_columns].isnull().sum()
             if null_counts.any():
-                logger.warning(f"Found null values in columns: \n{null_counts[null_counts > 0]}")
+                logger.warning(f"Found null values in text columns: \n{null_counts[null_counts > 0]}")
                 
             # Créer une copie pour éviter de modifier les données originales
             df = df.copy()
@@ -76,32 +76,50 @@ class Predict:
             self.image_handler = GridFSImageHandler()
             self.image_handler.__enter__()
 
-            # Extraire tous les chemins d'images d'un coup
-            image_paths = self.image_handler.batch_extract_images(df)
+            # Déterminer la méthode d'extraction des images
+            if 'gridfs_file_id' in df.columns:
+                # Utiliser gridfs_file_id pour extraire les images
+                logger.info("Using gridfs_file_id to extract images")
+                image_paths = self.image_handler.batch_extract_images(df)
+                key_column = 'gridfs_file_id'
+            elif 'productid' in df.columns and 'imageid' in df.columns:
+                # Utiliser productid et imageid pour extraire les images
+                logger.info("Using productid and imageid to extract images")
+                image_paths = self.image_handler.batch_extract_images_by_ids(df)
+                key_column = 'key'  # Clé formée de 'productid_imageid'
+            else:
+                raise ValueError("Required columns for image extraction are missing")
+
             logger.info(f"Retrieved {len(image_paths)} image paths")
             
             if not image_paths:
                 raise ValueError("No image paths were retrieved from GridFS")
             
             # Prétraiter les images
-            for _, row in df.iterrows():
-                gridfs_file_id = str(row['gridfs_file_id'])
-                if gridfs_file_id not in image_paths:
-                    raise ValueError(f"Image path not found for gridfs_file_id {gridfs_file_id}")
-                    
-                image_path = image_paths[gridfs_file_id]
+            for idx, row in df.iterrows():
+                if key_column == 'gridfs_file_id':
+                    key = str(row['gridfs_file_id'])
+                else:
+                    key = f"{str(row['productid'])}_{str(row['imageid'])}"
+                
+                if key not in image_paths:
+                    logger.warning(f"Image path not found for key {key}")
+                    continue  
+                
+                image_path = image_paths[key]
                 if not os.path.exists(image_path):
-                    raise FileNotFoundError(f"Image file not found at {image_path}")
-                    
+                    logger.warning(f"Image file not found at {image_path} for key {key}")
+                    continue  
+                
                 try:
                     img = load_img(image_path, target_size=(224, 224))
                     img_array = img_to_array(img)
                     img_array = preprocess_input(img_array)
                     images.append(img_array)
-                    logger.debug(f"Successfully processed image with gridfs_file_id {gridfs_file_id}")
+                    logger.debug(f"Successfully processed image for key {key}")
                 except Exception as e:
-                    logger.error(f"Error processing image with gridfs_file_id {gridfs_file_id}: {e}")
-                    raise
+                    logger.error(f"Error processing image for key {key}: {e}")
+                    continue  
 
             if not images:
                 raise ValueError("No images were successfully processed")
@@ -112,7 +130,7 @@ class Predict:
             # Faire les prédictions
             logger.info("Making predictions with LSTM model...")
             lstm_proba = self.lstm.predict(padded_sequences)
-            
+
             logger.info("Making predictions with VGG16 model...")
             vgg16_proba = self.vgg16.predict(images)
 
@@ -127,8 +145,8 @@ class Predict:
             logger.info("Mapping predictions to categories...")
             predictions = {}
 
-            logger.info(f"Mapper content: {self.mapper}")
-            logger.info(f"Raw predictions: {final_predictions}")
+            logger.debug(f"Mapper content: {self.mapper}")
+            logger.debug(f"Raw predictions: {final_predictions}")
 
             # Les prédictions sont les classes directement
             for i, pred in enumerate(final_predictions):
@@ -264,14 +282,17 @@ def main():
         if args.evaluation:
             logger.info("Running in evaluation mode with test data...")
             df = pd.DataFrame(list(sync_db.labeled_test.find()))
-            # Assurez-vous que gridfs_file_id est présent dans df
+            # Vérifier que gridfs_file_id est présent
             if 'gridfs_file_id' not in df.columns:
                 raise ValueError("gridfs_file_id column is missing in the test data")
         else:
             logger.info("Running in prediction mode with new data...")
-            # Charger vos nouvelles données ici
-            df = pd.DataFrame()  # Remplacez par votre code pour charger les données
-            # Assurez-vous que df contient 'description' et 'gridfs_file_id'
+            df = pd.DataFrame(list(sync_db.preprocessed_x_test.find())).head(10)  # Charger les données non étiquetées
+            # Vérifier que 'productid' et 'imageid' sont présents
+            required_columns = ['productid', 'imageid', 'description']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                raise ValueError(f"Missing required columns in test data: {missing_columns}")
 
         logger.info(f"Loaded {len(df)} samples")
 

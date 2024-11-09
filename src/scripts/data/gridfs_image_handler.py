@@ -4,7 +4,7 @@ import logging
 from typing import Dict
 from bson import ObjectId
 from PIL import Image
-import gridfs
+from gridfs import GridFS
 from src.config.mongodb import sync_db, sync_fs
 
 # Configuration du logger
@@ -47,18 +47,18 @@ class GridFSImageHandler:
         Extrait un lot d'images en utilisant gridfs_file_id et les sauvegarde dans un dossier temporaire
 
         Args:
-            df (pd.DataFrame): DataFrame contenant les colonnes 'gridfs_image_ref'
+            df (pd.DataFrame): DataFrame contenant la colonne 'gridfs_file_id'
 
         Returns:
             Dict[str, str]: Dictionnaire mapping gridfs_file_id à chemin local de l'image extraite
         """
         logger.info(f"Batch extracting images from GridFS using gridfs_file_id")
         image_paths = {}
-        
-        for _, row in df.iterrows():
-            gridfs_file_id = row.get('gridfs_image_ref')
+
+        for idx, row in df.iterrows():
+            gridfs_file_id = row.get('gridfs_file_id')
             if not gridfs_file_id:
-                logger.warning(f"No gridfs_file_id found for row with index {_}")
+                logger.warning(f"No gridfs_file_id found for row with index {idx}")
                 continue
 
             try:
@@ -66,53 +66,91 @@ class GridFSImageHandler:
                 grid_out = self.fs.get(ObjectId(gridfs_file_id))
                 if not grid_out:
                     raise FileNotFoundError(f"Image not found in GridFS for file_id={gridfs_file_id}")
-                
+
                 # Créer le chemin temporaire pour l'image
                 temp_path = os.path.join(self.temp_dir, f"{gridfs_file_id}.jpg")
-                
+
                 # Sauvegarder l'image
                 with open(temp_path, 'wb') as f:
                     f.write(grid_out.read())
-                
+
                 image_paths[str(gridfs_file_id)] = temp_path
-                
+
             except Exception as e:
                 logger.warning(f"Failed to extract image with file_id {gridfs_file_id}: {e}")
                 continue
-                
-        return image_paths  # Ajout de cette ligne pour renvoyer le dictionnaire des chemins d'images
+
+        return image_paths
 
     def batch_extract_images_by_ids(self, df) -> Dict[str, str]:
         """
-        Extrait un lot d'images en utilisant imageid et productid et les sauvegarde dans un dossier temporaire
+        Extrait un lot d'images en utilisant 'productid' et 'imageid' et les sauvegarde dans un dossier temporaire
+
+        Args:
+            df (pd.DataFrame): DataFrame contenant les colonnes 'productid' et 'imageid'
+
+        Returns:
+            Dict[str, str]: Dictionnaire mapping 'productid_imageid' à chemin local de l'image extraite
         """
-        logger.info(f"Batch extracting images from GridFS using imageid and productid")
+        logger.info(f"Batch extracting images from GridFS using productid and imageid")
         image_paths = {}
-        
-        for _, row in df.iterrows():
-            imageid = str(row['imageid'])
-            productid = str(row['productid'])
+
+        for idx, row in df.iterrows():
+            product_id = str(row['productid'])
+            image_id = str(row['imageid'])
+            key = f"{product_id}_{image_id}"
+
             try:
                 # Rechercher l'image dans GridFS
-                grid_out = self.fs.find_one({
-                    "metadata.imageid": imageid,
-                    "metadata.productid": productid,
-                    "metadata.original_path": {"$regex": "/image_"}
+                file_doc = self.fs.find_one({
+                    "metadata.productid": product_id,
+                    "metadata.imageid": image_id
                 })
-                if not grid_out:
-                    raise FileNotFoundError(f"Image not found in GridFS for imageid={imageid}, productid={productid}")
-                
-                # Créer le chemin temporaire pour l'image
-                temp_path = os.path.join(self.temp_dir, f"{imageid}_{productid}.jpg")
-                
-                # Sauvegarder l'image
-                with open(temp_path, 'wb') as f:
-                    f.write(grid_out.read())
-                
-                image_paths[f"{imageid}_{productid}"] = temp_path
-                
+
+                if file_doc:
+                    file_id = file_doc._id
+                    # Créer le chemin temporaire pour l'image
+                    temp_path = os.path.join(self.temp_dir, f"{key}.jpg")
+
+                    # Sauvegarder l'image
+                    with open(temp_path, 'wb') as f:
+                        f.write(file_doc.read())
+
+                    image_paths[key] = temp_path
+                    logger.debug(f"Successfully extracted image for key {key}")
+                else:
+                    logger.warning(f"No image found in GridFS for key {key}")
+
             except Exception as e:
-                logger.warning(f"Failed to extract image with imageid={imageid}, productid={productid}: {e}")
+                logger.warning(f"Failed to extract image with key {key}: {e}")
                 continue
-            
+
         return image_paths
+
+    def extract_image_to_temp(self, file_id) -> str:
+        """
+        Extrait une image spécifique depuis GridFS et la sauvegarde dans un fichier temporaire.
+
+        Args:
+            file_id (ObjectId): L'identifiant du fichier dans GridFS.
+
+        Returns:
+            str: Le chemin du fichier temporaire où l'image a été sauvegardée.
+        """
+        try:
+            grid_out = self.fs.get(file_id)
+            if not grid_out:
+                raise FileNotFoundError(f"Image not found in GridFS for file_id={file_id}")
+
+            # Créer le chemin temporaire pour l'image
+            temp_path = os.path.join(self.temp_dir, f"{file_id}.jpg")
+
+            # Sauvegarder l'image
+            with open(temp_path, 'wb') as f:
+                f.write(grid_out.read())
+
+            return temp_path
+
+        except Exception as e:
+            logger.warning(f"Failed to extract image with file_id {file_id}: {e}")
+            return None
