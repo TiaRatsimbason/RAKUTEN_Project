@@ -6,6 +6,7 @@ from dotenv import find_dotenv, load_dotenv
 import shutil
 import os
 
+logger = logging.getLogger(__name__)
 
 @click.command()
 @click.argument('input_filepath', type=click.Path(exists=True))
@@ -20,7 +21,7 @@ def main(input_filepath, output_filepath):
     # Si le dossier de destination existe déjà, il sera remplacé.
     shutil.copytree(input_filepath, output_filepath)
 
-    logger = logging.getLogger(__name__)
+    
     logger.info('making final data set from raw data')
 
 

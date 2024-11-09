@@ -19,15 +19,15 @@ import platform
 import time
 import numpy as np
 
+# Configuration du logger
+logging.basicConfig(level=logging.INFO)  
+logger = logging.getLogger(__name__)  # Initialiser le logger avec le nom du module
+
 # Configuration MongoDB
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://admin:motdepasseadmin@mongo:27017/")
 client = MongoClient(MONGODB_URI)
 db = client["rakuten_db"]  # Nom de la base de données
 collection = db["model_evaluation"]  # Nom de la collection pour les évaluations
-
-# Configuration du logger
-logging.basicConfig(level=logging.INFO)  
-logger = logging.getLogger(__name__)  # Initialiser le logger avec le nom du module
 
 # Third-party library imports
 import pandas as pd
@@ -43,14 +43,31 @@ router = APIRouter()
 @router.post("/train-model/")
 async def train_model():
     try:
+        # Ajoutons des logs pour déboguer
+        logger.info("Starting train_model endpoint")
+        
+        # Import dans le try pour voir si c'est l'import qui pose problème
+        logger.info("Importing train_and_save_model")
         from src.scripts.main import train_and_save_model
+        
+        logger.info("Calling train_and_save_model")
         train_and_save_model()
+        
+        logger.info("Training completed successfully")
         return {"message": "Model training completed successfully."}
-    except Exception as e:
+    except NameError as ne:
+        # Capturons spécifiquement l'erreur de nom non défini
+        logger.error(f"NameError in train_model: {str(ne)}")
         raise HTTPException(
-            status_code=500, detail=f"An error occurred during model training: {e}"
+            status_code=500, 
+            detail=f"NameError occurred: {str(ne)}"
         )
-
+    except Exception as e:
+        logger.error(f"Error in train_model: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"An error occurred during model training: {str(e)}"
+        )
 
 @router.post("/predict/")
 async def predict(

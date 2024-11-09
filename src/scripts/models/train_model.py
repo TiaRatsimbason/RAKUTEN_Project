@@ -15,11 +15,12 @@ import numpy as np
 import os
 import logging
 
+# Configuration
 BATCH_SIZE = 23
 NUM_CLASSES = 27
 ARTIFACTS_DIR = "./models"
 
-# Set up logging
+# Logger setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -29,207 +30,347 @@ class TextLSTMModel:
         self.max_sequence_length = max_sequence_length
         self.tokenizer = Tokenizer(num_words=max_words, oov_token="<OOV>")
         self.model = None
+        logger.info("TextLSTMModel initialized")
 
     def preprocess_and_fit(self, X_train, y_train, X_val, y_val):
-        # Log hyperparameters if not already logged
-        current_run = mlflow.active_run()
-        if current_run and not mlflow.get_run(current_run.info.run_id).data.params:
-            mlflow.log_param("max_words", self.max_words)
-            mlflow.log_param("max_sequence_length", self.max_sequence_length)
-            mlflow.log_param("batch_size", BATCH_SIZE)
+        try:
+            # Log hyperparameters
+            current_run = mlflow.active_run()
+            if current_run and not mlflow.get_run(current_run.info.run_id).data.params:
+                mlflow.log_param("max_words", self.max_words)
+                mlflow.log_param("max_sequence_length", self.max_sequence_length)
+                mlflow.log_param("batch_size", BATCH_SIZE)
 
-        # Tokenizer configuration
-        self.tokenizer.fit_on_texts(X_train["description"])
-        tokenizer_config = self.tokenizer.to_json()
-        os.makedirs(ARTIFACTS_DIR, exist_ok=True)
-        tokenizer_path = os.path.join(ARTIFACTS_DIR, "tokenizer_config.json")
-        with open(tokenizer_path, "w", encoding="utf-8") as json_file:
-            json_file.write(tokenizer_config)
-        # Log avant l'enregistrement du tokenizer
-        logger.info("Logging tokenizer_config.json to MLFlow")
-        mlflow.log_artifact(tokenizer_path)
+            # Tokenizer configuration
+            logger.info("Fitting tokenizer on training data")
+            self.tokenizer.fit_on_texts(X_train["description"])
+            
+            os.makedirs(ARTIFACTS_DIR, exist_ok=True)
+            tokenizer_path = os.path.join(ARTIFACTS_DIR, "tokenizer_config.json")
+            with open(tokenizer_path, "w", encoding="utf-8") as json_file:
+                json_file.write(self.tokenizer.to_json())
+            
+            logger.info("Logging tokenizer configuration to MLFlow")
+            mlflow.log_artifact(tokenizer_path)
 
-        # Prepare sequences
-        train_sequences = self.tokenizer.texts_to_sequences(X_train["description"])
-        train_padded_sequences = pad_sequences(train_sequences, maxlen=self.max_sequence_length, padding="post", truncating="post")
-        val_sequences = self.tokenizer.texts_to_sequences(X_val["description"])
-        val_padded_sequences = pad_sequences(val_sequences, maxlen=self.max_sequence_length, padding="post", truncating="post")
+            # Prepare sequences
+            logger.info("Preparing sequences")
+            train_sequences = self.tokenizer.texts_to_sequences(X_train["description"])
+            train_padded_sequences = pad_sequences(
+                train_sequences, 
+                maxlen=self.max_sequence_length,
+                padding="post",
+                truncating="post"
+            )
 
-        # LSTM Model
-        text_input = Input(shape=(self.max_sequence_length,))
-        embedding_layer = Embedding(input_dim=self.max_words, output_dim=128)(text_input)
-        lstm_layer = LSTM(128)(embedding_layer)
-        output = Dense(NUM_CLASSES, activation="softmax")(lstm_layer)
+            val_sequences = self.tokenizer.texts_to_sequences(X_val["description"])
+            val_padded_sequences = pad_sequences(
+                val_sequences,
+                maxlen=self.max_sequence_length,
+                padding="post",
+                truncating="post"
+            )
 
-        self.model = Model(inputs=[text_input], outputs=output)
-        self.model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
+            # LSTM Model
+            logger.info("Building LSTM model")
+            text_input = Input(shape=(self.max_sequence_length,), name="input_layer")
+            embedding_layer = Embedding(input_dim=self.max_words, output_dim=128)(text_input)
+            lstm_layer = LSTM(128)(embedding_layer)
+            output = Dense(NUM_CLASSES, activation="softmax", name="output_layer")(lstm_layer)
 
-        # LSTM Model checkpoint path
-        lstm_checkpoint_path = os.path.join(ARTIFACTS_DIR, "best_lstm_model.keras")
-        lstm_callbacks = [
-            ModelCheckpoint(filepath=lstm_checkpoint_path, save_best_only=True),
-            EarlyStopping(patience=3, restore_best_weights=True),
-            TensorBoard(log_dir="logs"),
-        ]
+            self.model = Model(inputs=[text_input], outputs=output)
+            self.model.compile(
+                optimizer="adam",
+                loss="categorical_crossentropy",
+                metrics=["accuracy"]
+            )
 
-        # Train the model
-        history = self.model.fit(
-            [train_padded_sequences],
-            tf.keras.utils.to_categorical(y_train, num_classes=NUM_CLASSES),
-            epochs=1,
-            batch_size=BATCH_SIZE,
-            validation_data=([val_padded_sequences], tf.keras.utils.to_categorical(y_val, num_classes=NUM_CLASSES)),
-            callbacks=lstm_callbacks,
-        )
+            # Training
+            logger.info("Training LSTM model")
+            lstm_checkpoint_path = os.path.join(ARTIFACTS_DIR, "best_lstm_model.keras")
+            callbacks = [
+                ModelCheckpoint(filepath=lstm_checkpoint_path, save_best_only=True),
+                EarlyStopping(patience=3, restore_best_weights=True),
+                TensorBoard(log_dir="logs")
+            ]
 
-        # Log metrics to MLFlow
-        mlflow.log_metric("lstm_accuracy", history.history['accuracy'][-1])
-        mlflow.log_metric("lstm_val_accuracy", history.history['val_accuracy'][-1])
-        mlflow.log_metric("lstm_loss", history.history['loss'][-1])
-        mlflow.log_metric("lstm_val_loss", history.history['val_loss'][-1])
+            history = self.model.fit(
+                train_padded_sequences,
+                tf.keras.utils.to_categorical(y_train, num_classes=NUM_CLASSES),
+                epochs=1,
+                batch_size=BATCH_SIZE,
+                validation_data=(
+                    val_padded_sequences,
+                    tf.keras.utils.to_categorical(y_val, num_classes=NUM_CLASSES)
+                ),
+                callbacks=callbacks
+            )
 
-        # Log avant l'enregistrement du modèle LSTM
-        logger.info("Logging LSTM model to MLFlow")
-        # Log the LSTM model
-        mlflow.tensorflow.log_model(self.model, "TextLSTMModel")
-        mlflow.log_artifact("logs")
+            # Log metrics
+            for metric, values in history.history.items():
+                mlflow.log_metric(f"lstm_{metric}", values[-1])
+
+            # Define model signature
+            from mlflow.models.signature import ModelSignature
+            from mlflow.types.schema import Schema, TensorSpec
+
+            input_schema = Schema([
+                TensorSpec(np.dtype(np.float32), (-1, self.max_sequence_length), "input_layer")
+            ])
+            output_schema = Schema([
+                TensorSpec(np.dtype(np.float32), (-1, NUM_CLASSES), "output_layer")
+            ])
+            signature = ModelSignature(inputs=input_schema, outputs=output_schema)
+
+            # Log model
+            logger.info("Logging LSTM model to MLFlow")
+            input_example = train_padded_sequences[:1]
+            mlflow.tensorflow.log_model(
+                self.model,
+                "TextLSTMModel",
+                signature=signature,
+                input_example=input_example
+            )
+            mlflow.log_artifact("logs")
+
+        except Exception as e:
+            logger.error(f"Error in TextLSTMModel training: {str(e)}")
+            raise
 
 class ImageVGG16Model:
     def __init__(self):
         self.model = None
+        logger.info("ImageVGG16Model initialized")
 
     def preprocess_and_fit(self, X_train, y_train, X_val, y_val):
-        # Log hyperparameters if not already logged
-        current_run = mlflow.active_run()
-        if current_run and not mlflow.get_run(current_run.info.run_id).data.params:
-            mlflow.log_param("batch_size", BATCH_SIZE)
-            mlflow.log_param("num_classes", NUM_CLASSES)
+        try:
+            # Log hyperparameters
+            current_run = mlflow.active_run()
+            if current_run and not mlflow.get_run(current_run.info.run_id).data.params:
+                mlflow.log_param("batch_size", BATCH_SIZE)
+                mlflow.log_param("num_classes", NUM_CLASSES)
 
-        df_train = pd.concat([X_train, y_train.astype(str)], axis=1)
-        df_val = pd.concat([X_val, y_val.astype(str)], axis=1)
+            # Prepare data generators
+            logger.info("Setting up data generators")
+            train_datagen = ImageDataGenerator(
+                preprocessing_function=preprocess_input,
+                validation_split=0.2
+            )
 
-        # Image Data Generators
-        train_datagen = ImageDataGenerator()
-        train_generator = train_datagen.flow_from_dataframe(
-            dataframe=df_train,
-            x_col="image_path",
-            y_col="prdtypecode",
-            target_size=(224, 224),
-            batch_size=BATCH_SIZE,
-            class_mode="categorical",
-            shuffle=True,
-        )
+            # Vérifier les chemins d'images
+            logger.info("Checking image paths...")
+            valid_train_data = X_train[X_train['image_path'].apply(os.path.exists)].copy()
+            valid_val_data = X_val[X_val['image_path'].apply(os.path.exists)].copy()
 
-        val_datagen = ImageDataGenerator()
-        val_generator = val_datagen.flow_from_dataframe(
-            dataframe=df_val,
-            x_col="image_path",
-            y_col="prdtypecode",
-            target_size=(224, 224),
-            batch_size=BATCH_SIZE,
-            class_mode="categorical",
-            shuffle=False,
-        )
+            if len(valid_train_data) == 0 or len(valid_val_data) == 0:
+                raise ValueError("No valid image paths found")
 
-        # VGG16 Model
-        image_input = Input(shape=(224, 224, 3))
-        vgg16_base = VGG16(include_top=False, weights="imagenet", input_tensor=image_input)
-        x = vgg16_base.output
-        x = Flatten()(x)
-        x = Dense(256, activation="relu")(x)
-        output = Dense(NUM_CLASSES, activation="softmax")(x)
+            logger.info(f"Valid training images: {len(valid_train_data)}")
+            logger.info(f"Valid validation images: {len(valid_val_data)}")
 
-        self.model = Model(inputs=vgg16_base.input, outputs=output)
+            # Convertir les labels en strings pour le générateur
+            valid_train_data['prdtypecode'] = y_train[valid_train_data.index].astype(str)
+            valid_val_data['prdtypecode'] = y_val[valid_val_data.index].astype(str)
 
-        for layer in vgg16_base.layers:
-            layer.trainable = False
+            train_generator = train_datagen.flow_from_dataframe(
+                dataframe=valid_train_data,
+                x_col="image_path",
+                y_col="prdtypecode",
+                target_size=(224, 224),
+                batch_size=BATCH_SIZE,
+                class_mode="categorical",
+                shuffle=True
+            )
 
-        self.model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
+            val_generator = train_datagen.flow_from_dataframe(
+                dataframe=valid_val_data,
+                x_col="image_path",
+                y_col="prdtypecode",
+                target_size=(224, 224),
+                batch_size=BATCH_SIZE,
+                class_mode="categorical",
+                shuffle=False
+            )
 
-        vgg_checkpoint_path = os.path.join(ARTIFACTS_DIR, "best_vgg16_model.keras")
-        vgg_callbacks = [
-            ModelCheckpoint(filepath=vgg_checkpoint_path, save_best_only=True),
-            EarlyStopping(patience=3, restore_best_weights=True),
-            TensorBoard(log_dir="logs"),
-        ]
+            # Build VGG16 model
+            logger.info("Building VGG16 model")
+            image_input = Input(shape=(224, 224, 3), name="image_input")
+            base_model = VGG16(
+                include_top=False,
+                weights="imagenet",
+                input_tensor=image_input
+            )
 
-        # Train the model
-        history = self.model.fit(train_generator, epochs=1, validation_data=val_generator, callbacks=vgg_callbacks)
+            # Freeze VGG16 layers
+            for layer in base_model.layers:
+                layer.trainable = False
 
-        # Log metrics
-        mlflow.log_metric("vgg16_accuracy", history.history['accuracy'][-1])
-        mlflow.log_metric("vgg16_val_accuracy", history.history['val_accuracy'][-1])
-        mlflow.log_metric("vgg16_loss", history.history['loss'][-1])
-        mlflow.log_metric("vgg16_val_loss", history.history['val_loss'][-1])
+            x = base_model.output
+            x = Flatten()(x)
+            x = Dense(256, activation="relu")(x)
+            output = Dense(NUM_CLASSES, activation="softmax", name="output_layer")(x)
 
-        # Log avant l'enregistrement du modèle VGG16
-        logger.info("Logging VGG16 model to MLFlow")
-        # Log the VGG16 model
-        mlflow.tensorflow.log_model(self.model, "ImageVGG16Model")
-        mlflow.log_artifact("logs")
+            self.model = Model(inputs=base_model.input, outputs=output)
+            self.model.compile(
+                optimizer="adam",
+                loss="categorical_crossentropy",
+                metrics=["accuracy"]
+            )
 
+            # Training
+            logger.info("Training VGG16 model")
+            vgg_checkpoint_path = os.path.join(ARTIFACTS_DIR, "best_vgg16_model.keras")
+            callbacks = [
+                ModelCheckpoint(filepath=vgg_checkpoint_path, save_best_only=True),
+                EarlyStopping(patience=3, restore_best_weights=True),
+                TensorBoard(log_dir="logs")
+            ]
+
+            history = self.model.fit(
+                train_generator,
+                epochs=1,
+                validation_data=val_generator,
+                callbacks=callbacks
+            )
+
+            # Log metrics
+            for metric, values in history.history.items():
+                mlflow.log_metric(f"vgg16_{metric}", values[-1])
+
+            # Define model signature
+            from mlflow.models.signature import ModelSignature
+            from mlflow.types.schema import Schema, TensorSpec
+
+            input_schema = Schema([
+                TensorSpec(np.dtype(np.float32), (-1, 224, 224, 3), "image_input")
+            ])
+            output_schema = Schema([
+                TensorSpec(np.dtype(np.float32), (-1, NUM_CLASSES), "output_layer")
+            ])
+            signature = ModelSignature(inputs=input_schema, outputs=output_schema)
+
+            # Log model
+            logger.info("Logging VGG16 model to MLFlow")
+            # Prendre un batch d'exemple
+            input_example = next(train_generator)[0][:1]
+            
+            mlflow.tensorflow.log_model(
+                self.model,
+                "ImageVGG16Model",
+                signature=signature,
+                input_example=input_example
+            )
+            mlflow.log_artifact("logs")
+
+        except Exception as e:
+            logger.error(f"Error in ImageVGG16Model training: {str(e)}")
+            raise
 
 class concatenate:
     def __init__(self, tokenizer, lstm, vgg16):
         self.tokenizer = tokenizer
         self.lstm = lstm
         self.vgg16 = vgg16
+        logger.info("Concatenate model initialized")
 
-    def preprocess_image(self, image_path, target_size):
-        img = load_img(image_path, target_size=target_size)
-        img_array = img_to_array(img)
-        img_array = preprocess_input(img_array)
-        return img_array
+    def preprocess_image(self, image_path, target_size=(224, 224)):
+        try:
+            if not os.path.exists(image_path):
+                logger.warning(f"Image not found: {image_path}")
+                # Retourner une image noire si le fichier n'existe pas
+                return np.zeros((*target_size, 3))
+            
+            img = load_img(image_path, target_size=target_size)
+            img_array = img_to_array(img)
+            img_array = preprocess_input(img_array)
+            return img_array
+        except Exception as e:
+            logger.error(f"Error preprocessing image {image_path}: {str(e)}")
+            return np.zeros((*target_size, 3))
 
     def predict(self, X_train, y_train, new_samples_per_class=50, max_sequence_length=10):
-        num_classes = NUM_CLASSES
+        try:
+            logger.info("Starting prediction for concatenate model")
+            num_classes = NUM_CLASSES
 
-        new_X_train = pd.DataFrame(columns=X_train.columns)
-        new_y_train = pd.DataFrame(columns=[])
+            # Resampling
+            new_X_train = pd.DataFrame(columns=X_train.columns)
+            new_y_train = pd.Series(dtype=int)
 
-        # Resample data for each class
-        for class_label in range(num_classes):
-            indices = np.where(y_train == class_label)[0]
-            sampled_indices = resample(indices, n_samples=new_samples_per_class, replace=False, random_state=42)
-            new_X_train = pd.concat([new_X_train, X_train.loc[sampled_indices]])
-            new_y_train = pd.concat([new_y_train, y_train.loc[sampled_indices]])
+            # Resample data for each class
+            for class_label in range(num_classes):
+                indices = np.where(y_train == class_label)[0]
+                if len(indices) > 0:
+                    n_samples = min(new_samples_per_class, len(indices))
+                    sampled_indices = resample(indices, n_samples=n_samples, replace=False, random_state=42)
+                    new_X_train = pd.concat([new_X_train, X_train.iloc[sampled_indices]])
+                    new_y_train = pd.concat([new_y_train, y_train.iloc[sampled_indices]])
 
-        new_X_train = new_X_train.reset_index(drop=True)
-        new_y_train = new_y_train.reset_index(drop=True)
-        new_y_train = new_y_train.values.reshape(-1).astype("int")
+            new_X_train = new_X_train.reset_index(drop=True)
+            new_y_train = new_y_train.reset_index(drop=True)
 
-        train_sequences = self.tokenizer.texts_to_sequences(new_X_train["description"])
-        train_padded_sequences = pad_sequences(train_sequences, maxlen=max_sequence_length, padding="post", truncating="post")
+            logger.info(f"Resampled dataset size: {len(new_X_train)}")
 
-        # Preprocess images
-        target_size = (224, 224, 3)
-        images_train = new_X_train["image_path"].apply(lambda x: self.preprocess_image(x, target_size))
-        images_train = tf.convert_to_tensor(images_train.tolist(), dtype=tf.float32)
+            # Text preprocessing
+            logger.info("Processing text data")
+            train_sequences = self.tokenizer.texts_to_sequences(new_X_train["description"])
+            train_padded_sequences = pad_sequences(
+                train_sequences,
+                maxlen=max_sequence_length,
+                padding="post",
+                truncating="post"
+            )
 
-        # Make predictions using LSTM and VGG16
-        lstm_proba = self.lstm.predict([train_padded_sequences])
-        vgg16_proba = self.vgg16.predict([images_train])
+            # Image preprocessing
+            logger.info("Processing image data")
+            images_train = []
+            for image_path in new_X_train["image_path"]:
+                img_array = self.preprocess_image(image_path)
+                images_train.append(img_array)
+            
+            images_train = np.array(images_train)
+            
+            if len(images_train) == 0:
+                raise ValueError("No valid images found for training")
 
-        return lstm_proba, vgg16_proba, new_y_train
+            # Make predictions
+            logger.info("Making predictions with individual models")
+            lstm_proba = self.lstm.predict(train_padded_sequences, verbose=1)
+            vgg16_proba = self.vgg16.predict(images_train, verbose=1)
+
+            return lstm_proba, vgg16_proba, new_y_train.values
+
+        except Exception as e:
+            logger.error(f"Error in concatenate predict: {str(e)}")
+            raise
 
     def optimize(self, lstm_proba, vgg16_proba, y_train):
-        best_weights = None
-        best_accuracy = 0.0
+        try:
+            logger.info("Starting weight optimization")
+            best_weights = None
+            best_accuracy = 0.0
 
-        # Find optimal weights for combining LSTM and VGG16 predictions
-        for lstm_weight in np.linspace(0, 1, 101):
-            vgg16_weight = 1.0 - lstm_weight
-            combined_predictions = (lstm_weight * lstm_proba) + (vgg16_weight * vgg16_proba)
-            final_predictions = np.argmax(combined_predictions, axis=1)
-            accuracy = accuracy_score(y_train, final_predictions)
+            # Chercher les meilleurs poids
+            for lstm_weight in np.linspace(0, 1, 101):
+                vgg16_weight = 1.0 - lstm_weight
+                combined_predictions = (lstm_weight * lstm_proba) + (vgg16_weight * vgg16_proba)
+                final_predictions = np.argmax(combined_predictions, axis=1)
+                accuracy = accuracy_score(y_train, final_predictions)
 
-            if accuracy > best_accuracy:
-                best_accuracy = accuracy
-                best_weights = (lstm_weight, vgg16_weight)
+                if accuracy > best_accuracy:
+                    best_accuracy = accuracy
+                    best_weights = (lstm_weight, vgg16_weight)
 
-        # Enregistrer les meilleurs poids dans MLflow
-        logger.info("Logging best weights to MLFlow")
-        mlflow.log_param("best_lstm_weight", best_weights[0])
-        mlflow.log_param("best_vgg16_weight", best_weights[1])
+            logger.info(f"Best weights found: LSTM={best_weights[0]:.3f}, VGG16={best_weights[1]:.3f}")
+            logger.info(f"Best accuracy: {best_accuracy:.3f}")
 
-        return best_weights
+            # Log dans MLflow
+            mlflow.log_param("best_lstm_weight", best_weights[0])
+            mlflow.log_param("best_vgg16_weight", best_weights[1])
+            mlflow.log_metric("best_combined_accuracy", best_accuracy)
+
+            return best_weights
+
+        except Exception as e:
+            logger.error(f"Error in weight optimization: {str(e)}")
+            raise

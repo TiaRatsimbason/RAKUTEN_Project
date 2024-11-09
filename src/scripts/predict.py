@@ -3,10 +3,6 @@ import json
 import logging
 import os
 
-# Configuration du logger
-logging.basicConfig(level=logging.INFO)  # Configurer le niveau de log selon votre besoin
-logger = logging.getLogger(__name__)  # Initialiser le logger avec le nom du module
-
 import keras
 import mlflow
 import mlflow.pyfunc
