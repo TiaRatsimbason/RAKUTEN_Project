@@ -94,43 +94,68 @@ Once you have downloaded the GitHub repository and the data (required before run
 >
 > `[http://localhost:8080/]` <- You can access the Airflow UI  at this address
 >
->##API ENDPOINTS##
->
->#1. /load-data/#
+## API ENDPOINTS
 
-Checks for required files existence.
-Loads data using MongoDBDataLoader (src\scripts\data\mongodb_data_loader.py).
-Saves status in the data_pipeline collection on rakuten_db.
+### 1. /load-data/
+* Checks for required files existence.
+* Loads data using MongoDBDataLoader (src\scripts\data\mongodb_data_loader.py).
+* Saves status in the data_pipeline collection on rakuten_db.
 
->#2. /data-status/
+### 2. /data-status/
+* Verifies required collections existence.
+* Counts number of documents in each collection.
+* Checks for images presence in GridFS.
 
-Verifies required collections existence.
-Counts number of documents in each collection.
-Checks for images presence in GridFS.
+### 3. /prepare-data/
+* Performs data preprocessing.
+* Splits data into training, validation and test sets.
+* Processes images and stores them in GridFS with appropriate metadata (rakuten_db - pipeline_metadata).
+* Saves labeled data in MongoDB.
 
->#3. /prepare-data/
+### 4. /train-model/
+* Calls train_and_save_model() function from src.scripts.main (rakuten_db - model_metadata).
 
-Performs data preprocessing.
-Splits data into training, validation and test sets.
-Processes images and stores them in GridFS with appropriate metadata (rakuten_db - pipeline_metadata).
-Saves labeled data in MongoDB.
+### 5. /predict/
+* Loads test data from MongoDB.
+* Loads predictor and performs predictions.
+* Saves predictions in MongoDB (rakuten_db - predictions collection).
 
->#4. /train-model/
+### 6. /evaluate-model/
+* Loads labeled test data.
+* Makes predictions on this data.
+* Calculates evaluation metrics.
+* Saves results in MongoDB (rakuten_db - model_evaluation).## API ENDPOINTS
 
-Calls train_and_save_model() function from src.scripts.main (rakuten_db - model_metadata).
+### 1. /load-data/
+* Checks for required files existence.
+* Loads data using MongoDBDataLoader (src\scripts\data\mongodb_data_loader.py).
+* Saves status in the data_pipeline collection on rakuten_db.
 
->#5. /predict/
+### 2. /data-status/
+* Verifies required collections existence.
+* Counts number of documents in each collection.
+* Checks for images presence in GridFS.
 
-Loads test data from MongoDB.
-Loads predictor and performs predictions.
-Saves predictions in MongoDB (rakuten_db - predictions collection).
+### 3. /prepare-data/
+* Performs data preprocessing.
+* Splits data into training, validation and test sets.
+* Processes images and stores them in GridFS with appropriate metadata (rakuten_db - pipeline_metadata).
+* Saves labeled data in MongoDB.
 
->#6. /evaluate-model/
+### 4. /train-model/
+* Calls train_and_save_model() function from src.scripts.main (rakuten_db - model_metadata).
 
-Loads labeled test data.
-Makes predictions on this data.
-Calculates evaluation metrics.
-Saves results in MongoDB (rakuten_db - model_evaluation).
+### 5. /predict/
+* Loads test data from MongoDB.
+* Loads predictor and performs predictions.
+* Saves predictions in MongoDB (rakuten_db - predictions collection).
+
+### 6. /evaluate-model/
+* Loads labeled test data.
+* Makes predictions on this data.
+* Calculates evaluation metrics.
+* Saves results in MongoDB (rakuten_db - model_evaluation).
+
 
 > `python src/scripts/predict.py` <- It will use the trained models to make a prediction (of the prdtypecode) on the desired data, by default, it will predict on the train. You can pass the path to data and images as arguments if you want to change it
 
