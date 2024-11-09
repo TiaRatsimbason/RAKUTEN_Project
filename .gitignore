@@ -82,7 +82,7 @@ target/
 .ipynb_checkpoints/
 
 # exclude data from source control by default
-/data/
+/data/*
 
 # Mac OS-specific storage files
 .DS_Store
@@ -105,13 +105,17 @@ target/
 .continueignore
 
 # Data folders
-data/
-!src/scripts/data/
+/data/*
+!src/
+src/scripts/data/*
 !src/scripts/data/mongodb_data_loader.py
 !src/scripts/data/gridfs_image_handler.py
-data/raw/
-data/preprocessed/
-docker/data/
+
+# Supprimer ou commenter les anciennes règles data qui peuvent entrer en conflit
+# data/
+# data/raw/
+# data/preprocessed/
+# docker/data/
 
 # MLflow specific
 mlruns/
@@ -140,7 +144,3 @@ mongo_database-dev/
 
 # Poetry
 poetry.lock
-
-# Exceptions pour les fichiers spécifiques dans data/
-!src/scripts/data/mongodb_data_loader.py
-!src/scripts/data/gridfs_image_handler.py

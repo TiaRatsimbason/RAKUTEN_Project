@@ -110,7 +110,7 @@ class ImageVGG16Model:
                     for i, idx in enumerate(batch_indices):
                         try:
                             # Get image from GridFS
-                            grid_out = sync_fs.get(ObjectId(df.iloc[idx]['gridfs_image_ref']))
+                            grid_out = sync_fs.get(ObjectId(df.iloc[idx]['gridfs_file_id']))
                             img_data = grid_out.read()
                             
                             # Convert to image and preprocess
@@ -125,7 +125,7 @@ class ImageVGG16Model:
                             )
                             
                         except Exception as e:
-                            logger.error(f"Error loading image {df.iloc[idx]['gridfs_image_ref']}: {e}")
+                            logger.error(f"Error loading image {df.iloc[idx]['gridfs_file_id']}: {e}")
                             continue
                     
                     yield batch_images, batch_labels
@@ -206,7 +206,7 @@ class concatenate:
         images = np.zeros((len(X_resampled), 224, 224, 3))
         for i, (_, row) in enumerate(X_resampled.iterrows()):
             try:
-                grid_out = sync_fs.get(ObjectId(row['gridfs_image_ref']))
+                grid_out = sync_fs.get(ObjectId(row['gridfs_file_id']))
                 img_data = grid_out.read()
                 img = Image.open(io.BytesIO(img_data))
                 img = img.resize((224, 224))
@@ -214,7 +214,7 @@ class concatenate:
                 img_array = preprocess_input(img_array)
                 images[i] = img_array
             except Exception as e:
-                logger.error(f"Error processing image {row['gridfs_image_ref']}: {e}")
+                logger.error(f"Error processing image {row['gridfs_file_id']}: {e}")
                 continue
 
         # Get predictions
@@ -244,7 +244,7 @@ class concatenate:
         mlflow.log_param("best_vgg16_weight", best_weights[1])
         mlflow.log_metric("best_combined_accuracy", best_accuracy)
 
-        return best_weights
+        return best_weights, best_accuracy
 
 def train_and_save_models(X_train, y_train, X_val, y_val):
     try:
@@ -273,7 +273,7 @@ def train_and_save_models(X_train, y_train, X_val, y_val):
                                       image_vgg16_model.model)
         
         lstm_proba, vgg16_proba, new_y_train = model_concatenate.predict(X_train, y_train)
-        best_weights = model_concatenate.optimize(lstm_proba, vgg16_proba, new_y_train)
+        best_weights, best_accuracy = model_concatenate.optimize(lstm_proba, vgg16_proba, new_y_train)
 
         # Save weights
         weights_path = os.path.join(ARTIFACTS_DIR, "best_weights.json")

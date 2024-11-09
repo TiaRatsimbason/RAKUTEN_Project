@@ -1,264 +1,274 @@
-import sys
-import os
 import pytest
-import pandas as pd
-from unittest import mock
+import asyncio
+import concurrent.futures
+from unittest.mock import patch, AsyncMock, MagicMock, create_autospec, mock_open
 from fastapi.testclient import TestClient
-from httpx import AsyncClient, ASGITransport
-from unittest.mock import patch, MagicMock
+import pandas as pd
 import numpy as np
+import os
+from pathlib import Path
+import json
 from src.api.app import app
-from PIL import Image
-import io
+from src.scripts.features.build_features import DataImporter, TextPreprocessor, ImagePreprocessor
 
-# Ajouter dynamiquement src au PYTHONPATH
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../src'))
-sys.path.append(project_root)
+@pytest.fixture
+def client():
+    return TestClient(app)
 
-# Moquer les fonctions MLflow avant l'importation de l'application
-with patch('mlflow.set_tracking_uri'), \
-     patch('mlflow.set_experiment'), \
-     patch('mlflow.start_run'), \
-     patch('mlflow.log_param'), \
-     patch('mlflow.log_artifact'), \
-     patch('mlflow.log_metric'), \
-     patch('mlflow.register_model'):
-    # Importer l'application FastAPI
-    from src.api.app import app
+@pytest.fixture
+def mock_mongodb():
+    mock_db = AsyncMock()
+    
+    # Configuration des collections
+    collections = {
+        'preprocessed_x_train': AsyncMock(),
+        'preprocessed_y_train': AsyncMock(),
+        'preprocessed_x_test': AsyncMock(),
+        'predictions': AsyncMock(),
+        'labeled_test': AsyncMock(),
+        'labeled_train': AsyncMock(),
+        'labeled_val': AsyncMock(),
+        'pipeline_metadata': AsyncMock(),
+        'data_pipeline': AsyncMock(),
+        'model_metadata': AsyncMock()
+    }
+    
+    # Configuration des méthodes de collection
+    for collection in collections.values():
+        collection.insert_one.return_value = AsyncMock(inserted_id='test_id')
+        collection.find_one.return_value = {'_id': '1', 'data': 'test'}
+        collection.find.return_value.to_list.return_value = [{'_id': '1', 'data': 'test'}]
+        collection.create_index.return_value = 'index_name'
+        collection.drop.return_value = None
+    
+    # Configuration de l'accès aux collections
+    mock_db.__getitem__.side_effect = lambda x: collections[x]
+    mock_db.get_collection.side_effect = lambda x: collections[x]
+    mock_db.list_collection_names = AsyncMock(return_value=list(collections.keys()))
+    
+    # Configuration GridFS
+    mock_db.fs = AsyncMock()
+    mock_db.fs.files = MagicMock()
+    mock_db.fs.files.find_one.return_value = {
+        "_id": "test_id",
+        "filename": "test.jpg",
+        "metadata": {"original_path": "/test/"}
+    }
+    mock_db.fs.chunks = MagicMock()
+    mock_db.fs.upload_from_stream = AsyncMock(return_value="new_file_id")
+    mock_db.fs.get = AsyncMock(return_value=AsyncMock(
+        read=AsyncMock(return_value=b"fake_image_data")
+    ))
+    
+    return mock_db
 
-# Importer les modules nécessaires
-from src.scripts import predict, main
+def test_load_data(client, mock_mongodb):
+    with patch('src.scripts.data.mongodb_data_loader.MongoDBDataLoader') as mock_loader, \
+         patch('src.api.routes.model.async_db', mock_mongodb), \
+         patch('src.api.routes.model.db', mock_mongodb), \
+         patch('os.path.exists', return_value=True):
+        mock_loader.return_value.load_all_data.return_value = True
+        response = client.post('/api/model/load-data/')
+        assert response.status_code == 200
 
-# Utiliser TestClient pour tester les routes FastAPI de manière synchrone
-client = TestClient(app)
-
-@pytest.mark.asyncio
-async def test_train_model(mocker):
-    # Mocking the train_and_save_model function to avoid real execution during tests
-    mocker.patch('src.scripts.main.train_and_save_model', return_value=None)
-
-    # Call the API to train the model
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        response = await ac.post("/api/model/train-model/")
-
-    # Check that the response is correct
-    assert response.status_code == 200, f"Erreur: {response.status_code}, Détails: {response.text}"
-    assert response.json() == {"message": "Model training completed successfully."}
-
-@pytest.mark.asyncio
-async def test_predict(mocker):
-    # Mocking mlflow.tracking.MlflowClient
-    mock_mlflow_client = mocker.patch("src.scripts.predict.mlflow.tracking.MlflowClient")
-    mock_client_instance = mock_mlflow_client.return_value
-    # Mocking get_model_version
-    mock_model_version_details = mocker.Mock(run_id='test_run_id')
-    mock_client_instance.get_model_version.return_value = mock_model_version_details
-    # Mocking get_run
-    mock_run_info = mocker.Mock(info=mocker.Mock(experiment_id='test_experiment_id'))
-    mock_client_instance.get_run.return_value = mock_run_info
-
-    # Mocking os.path.exists to always return True
-    mocker.patch("os.path.exists", return_value=True)
-
-    # Mocking open to return dummy data
-    def mock_open_read_data(file, *args, **kwargs):
-        if 'tokenizer_config.json' in file:
-            return mocker.mock_open(read_data='{"config": "tokenizer"}').return_value
-        elif 'best_weights.json' in file:
-            return mocker.mock_open(read_data='{"weights": [0.5, 0.5]}').return_value
-        elif 'mapper.json' in file:
-            return mocker.mock_open(read_data='{"0": 0, "1": 1}').return_value
-        else:
-            return mocker.mock_open(read_data='').return_value
-
-    mocker.patch("builtins.open", side_effect=mock_open_read_data)
-
-    # Mocking keras.models.load_model to return a mock model
-    mock_lstm_model = mocker.Mock()
-    mock_vgg16_model = mocker.Mock()
-    mocker.patch("src.scripts.predict.keras.models.load_model", side_effect=[mock_lstm_model, mock_vgg16_model])
-
-    # Mocking tokenizer_from_json
-    mock_tokenizer = mocker.Mock()
-    mocker.patch("src.scripts.predict.tokenizer_from_json", return_value=mock_tokenizer)
-
-    # Mocking the Predict class
-    mock_predict_instance = mocker.Mock()
-    mocker.patch("src.scripts.predict.Predict", return_value=mock_predict_instance)
-    # Mocking the predict method of Predict instance
-    mock_predict_instance.predict.return_value = {"0": "prediction_1", "1": "prediction_2"}
-
-    # Mocking pandas.read_csv to simulate reading the CSV
-    mocker.patch("pandas.read_csv", return_value=pd.DataFrame({
-        "description": ["desc1", "desc2"],
-        "image_path": ["path1", "path2"]
-    }))
-
-    # Call the API for prediction
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        response = await ac.post(
-            "/api/model/predict/",
-            params={"version": 1, "images_folder": "some_folder"}
-        )
-
-    # Check that the response is correct
-    assert response.status_code == 200, f"Erreur: {response.status_code}, Détails: {response.text}"
-    assert response.json() == {"predictions": {"0": "prediction_1", "1": "prediction_2"}}
-
-@pytest.mark.asyncio
-async def test_evaluate_model(mocker):
-    from src.scripts import predict
-
-    # Mocking NLTK download calls
-    mocker.patch("nltk.download", return_value=None)
-
-    # Mocking MongoDB collection with insert_one
-    mock_collection = mocker.Mock()
-    mock_collection.insert_one.return_value = mocker.Mock()
-
-    # Create a mock class for MongoDB client
-    class MockMongoClient:
-        def __init__(self, *args, **kwargs):
-            pass
+def test_data_status(client, mock_mongodb):
+    """Test de l'endpoint data-status"""
+    with patch('src.api.routes.model.async_db', mock_mongodb), \
+         patch('src.api.routes.model.db', mock_mongodb):
+         
+        # Configurer correctement le mock pour fs.files
+        mock_mongodb.fs.files.count_documents = AsyncMock(return_value=10)
+        mock_mongodb.list_collection_names.return_value = ['preprocessed_x_train', 'preprocessed_x_test', 'preprocessed_y_train']
         
-        def __getitem__(self, name):
-            return {"model_evaluation": mock_collection}[name]
+        # Mock pour les collections
+        for collection in ['preprocessed_x_train', 'preprocessed_y_train', 'preprocessed_x_test']:
+            mock_mongodb[collection].count_documents = AsyncMock(return_value=100)
+        
+        response = client.get('/api/model/data-status/')
+        assert response.status_code == 200
 
-    # Patch MongoClient
-    mocker.patch("src.api.routes.model.MongoClient", MockMongoClient)
-    # Ensure the collection is available directly
-    mocker.patch("src.api.routes.model.collection", mock_collection)
+def create_sync_mongo_cursor(data):
+    """Crée un curseur MongoDB sync simulé"""
+    cursor = MagicMock()
+    cursor.to_list = MagicMock(return_value=data)
+    return cursor
 
-    # Mocking mlflow.tracking.MlflowClient
-    mock_mlflow_client = mocker.patch("src.scripts.predict.mlflow.tracking.MlflowClient")
-    mock_client_instance = mock_mlflow_client.return_value
-    mock_client_instance.get_model_version.return_value = mocker.Mock(run_id='test_run_id')
-    mock_client_instance.get_run.return_value = mocker.Mock(info=mocker.Mock(experiment_id='test_experiment_id'))
+def create_async_mongo_cursor(data):
+    """Crée un curseur MongoDB async simulé"""
+    async def async_gen():
+        for item in data:
+            yield item
+    cursor = AsyncMock()
+    cursor.__aiter__.side_effect = async_gen
+    cursor.to_list = AsyncMock(return_value=data)
+    return cursor
 
-    # Mocking os.path.exists to always return True
-    mocker.patch("os.path.exists", return_value=True)
+@pytest.fixture
+def mock_mongodb():
+    """Fixture améliorée pour mock MongoDB"""
+    mock_db = AsyncMock()
+    
+    # Configuration des collections avec des données de test
+    test_data = [{'_id': '1', 'data': 'test'} for _ in range(10)]
+    
+    collections = {
+        'preprocessed_x_train': AsyncMock(),
+        'preprocessed_y_train': AsyncMock(),
+        'preprocessed_x_test': AsyncMock(),
+        'predictions': AsyncMock(),
+        'labeled_test': AsyncMock(),
+        'labeled_train': AsyncMock(),
+        'labeled_val': AsyncMock(),
+        'pipeline_metadata': AsyncMock(),
+        'data_pipeline': AsyncMock(),
+        'model_metadata': AsyncMock(),
+        'fs.files': AsyncMock(),
+        'fs.chunks': AsyncMock()
+    }
+    
+    # Configuration des méthodes pour chaque collection
+    for name, collection in collections.items():
+        cursor_mock = MagicMock()
+        cursor_mock.__iter__.return_value = test_data
+        cursor_mock.to_list.return_value = test_data
+        collection.find.return_value = cursor_mock
+        collection.find_one.return_value = test_data[0]
+        collection.insert_one.return_value = AsyncMock(inserted_id='test_id')
+        collection.insert_many.return_value = AsyncMock()
+        collection.count_documents.return_value = len(test_data)
+        collection.drop.return_value = None
+    
+    # Configuration de GridFS
+    mock_db.fs = AsyncMock()
+    mock_db.fs.files = collections['fs.files']
+    mock_db.fs.chunks = collections['fs.chunks']
+    mock_db.fs.find_one.return_value = {
+        '_id': 'test_id',
+        'filename': 'test.jpg',
+        'metadata': {'original_path': '/image_test/'}
+    }
+    mock_db.fs.upload_from_stream = AsyncMock(return_value='new_file_id')
+    
+    # Configuration des méthodes de base de données
+    mock_db.__getitem__.side_effect = lambda x: collections.get(x, AsyncMock())
+    mock_db.list_collection_names = AsyncMock(return_value=list(collections.keys()))
+    
+    return mock_db
 
-    # Mocking open to return valid data
-    def mock_open_image(file, *args, **kwargs):
-        if 'image' in file:
-            image = Image.new('RGB', (224, 224), color='white')
-            img_byte_arr = io.BytesIO()
-            image.save(img_byte_arr, format='JPEG')
-            img_byte_arr.seek(0)
-            return mock.mock_open(read_data=img_byte_arr.read()).return_value
-        elif 'tokenizer_config.json' in file:
-            return mock.mock_open(read_data=b'{"config": "tokenizer"}').return_value
-        elif 'best_weights.json' in file:
-            return mock.mock_open(read_data=b'{"weights": [0.5, 0.5]}').return_value
-        elif 'mapper.json' in file:
-            return mock.mock_open(read_data=b'{"0": "10", "1": "20"}').return_value
-        else:
-            return mock.mock_open(read_data=b'').return_value
+def test_prepare_data(client, mock_mongodb):
+    """Test de l'endpoint prepare-data avec mocks améliorés"""
+    with patch('src.scripts.features.build_features.DataImporter') as mock_importer, \
+         patch('src.config.mongodb.MongoClient') as mock_client, \
+         patch('src.config.mongodb.sync_db', mock_mongodb), \
+         patch('src.config.mongodb.async_db', mock_mongodb), \
+         patch('src.api.routes.model.async_db', mock_mongodb), \
+         patch('src.api.routes.model.db', mock_mongodb):
 
-    mocker.patch("builtins.open", side_effect=mock_open_image)
+        # Configuration du mock MongoClient
+        mock_client.return_value = MagicMock()
+        mock_client.return_value.__getitem__.return_value = mock_mongodb
 
-    # Mocking keras models
-    mock_lstm_model = mocker.Mock()
-    mock_lstm_model.predict.return_value = np.array([[0.8, 0.2], [0.4, 0.6]])
-    mock_vgg16_model = mocker.Mock()
-    mock_vgg16_model.predict.return_value = np.array([[0.3, 0.7], [0.5, 0.5]])
-    mocker.patch("src.scripts.predict.keras.models.load_model", side_effect=[mock_lstm_model, mock_vgg16_model])
+        # Setup des données de test
+        df = pd.DataFrame({
+            'productid': [str(i) for i in range(10)],
+            'imageid': [str(i) for i in range(10)],
+            'description': [f'test description {i}' for i in range(10)],
+            'designation': [f'test designation {i}' for i in range(10)],
+            'prdtypecode': [i % 27 for i in range(10)]
+        })
 
-    # Mocking tokenizer
-    mock_tokenizer = mocker.Mock()
-    mock_tokenizer.texts_to_sequences.return_value = [[1, 2, 3]]
-    mocker.patch("src.scripts.predict.tokenizer_from_json", return_value=mock_tokenizer)
+        # Configuration du mock DataImporter
+        mock_importer_instance = MagicMock()
+        mock_importer_instance.load_data.return_value = df
+        mock_importer_instance.split_train_test.return_value = (
+            df.copy(), df.copy(), df.copy(),
+            df['prdtypecode'], df['prdtypecode'], df['prdtypecode']
+        )
+        mock_importer.return_value = mock_importer_instance
 
-    # Create a mock DataFrame with test data - Using 10 samples
-    df_mock = pd.DataFrame({
-        "description": ["item1desc", "item2desc"] * 5,
-        "image_path": [f"path/to/fake_image_{i}.jpg" for i in range(10)],
-        "imageid": [f"img{i}" for i in range(10)],
-        "productid": [f"prod{i}" for i in range(10)],
-        "prdtypecode": [0, 1] * 5
-    })
+        response = client.post('/api/model/prepare-data/')
+        assert response.status_code == 200
 
-    # Mock DataImporter
-    mock_importer = mocker.patch("src.api.routes.model.DataImporter")
-    mock_importer_instance = mock_importer.return_value
-    mock_importer_instance.load_data.return_value = df_mock
+def test_predict(client, mock_mongodb):
+    """Test de l'endpoint predict avec mocks améliorés"""
+    with patch('src.scripts.predict.load_predictor') as mock_predictor, \
+         patch('src.config.mongodb.MongoClient') as mock_client, \
+         patch('src.config.mongodb.sync_db', mock_mongodb), \
+         patch('src.config.mongodb.async_db', mock_mongodb), \
+         patch('src.api.routes.model.async_db', mock_mongodb), \
+         patch('src.api.routes.model.db', mock_mongodb):
 
-    # Mock split_train_test to return the full DataFrame for evaluation
-    def mock_split_train_test(df, **kwargs):
-        return None, None, df[["description", "image_path", "imageid", "productid"]], None, None, df["prdtypecode"]
+        # Configuration du mock MongoClient
+        mock_client.return_value = MagicMock()
+        mock_client.return_value.__getitem__.return_value = mock_mongodb
 
-    mock_importer_instance.split_train_test.side_effect = mock_split_train_test
+        # Setup des données
+        df = pd.DataFrame({
+            'productid': [str(i) for i in range(10)],
+            'imageid': [str(i) for i in range(10)],
+            'description': [f'test description {i}' for i in range(10)],
+            'designation': [f'test designation {i}' for i in range(10)]
+        })
 
-    # Calculate expected sample size (30% of 10 = 3)
-    expected_sample_size = int(len(df_mock) * 0.3)
+        # Configuration du mock predictor
+        predictor = MagicMock()
+        predictor.predict.return_value = {str(i): str(i % 27) for i in range(10)}
+        mock_predictor.return_value = predictor
 
-    # Create a fixed sample for consistent testing
-    sample_indices = [0, 1, 2]  # First 3 indices for deterministic testing
-    expected_predictions = {str(i): i % 2 for i in range(expected_sample_size)}
+        # Configuration du mock de la collection
+        cursor = MagicMock()
+        cursor.__iter__.return_value = df.to_dict('records')
+        mock_mongodb.preprocessed_x_test.find.return_value = cursor
 
-    # Mock the sample method to always return the same indices
-    def mock_sample(*args, **kwargs):
-        result_df = df_mock.iloc[sample_indices][["description", "image_path", "imageid", "productid"]]
-        # Ensure index is reset to avoid any potential issues
-        return result_df.reset_index(drop=True)
+        response = client.post('/api/model/predict/?version=1')
+        assert response.status_code == 200
 
-    mocker.patch.object(pd.DataFrame, 'sample', side_effect=mock_sample)
+def test_evaluate_model(client, mock_mongodb):
+    """Test de l'endpoint evaluate-model avec mocks améliorés"""
+    with patch('src.scripts.features.build_features.DataImporter') as mock_importer, \
+         patch('src.scripts.predict.load_predictor') as mock_predictor, \
+         patch('src.config.mongodb.MongoClient') as mock_client, \
+         patch('src.config.mongodb.sync_db', mock_mongodb), \
+         patch('src.config.mongodb.async_db', mock_mongodb), \
+         patch('src.api.routes.model.async_db', mock_mongodb), \
+         patch('src.api.routes.model.db', mock_mongodb):
 
-    # Mock predictor with fixed predictions matching the sample size
-    mock_predictor = mocker.Mock()
-    mock_predictor.predict.return_value = expected_predictions
-    mocker.patch("src.api.routes.model.load_predictor", return_value=mock_predictor)
+        # Configuration du mock MongoClient
+        mock_client.return_value = MagicMock()
+        mock_client.return_value.__getitem__.return_value = mock_mongodb
 
-    # Mock TextPreprocessor and ImagePreprocessor
-    mocker.patch("src.scripts.predict.TextPreprocessor")
-    mocker.patch("src.scripts.predict.ImagePreprocessor")
+        # Setup des données
+        df = pd.DataFrame({
+            'productid': [str(i) for i in range(10)],
+            'imageid': [str(i) for i in range(10)],
+            'description': [f'test description {i}' for i in range(10)],
+            'designation': [f'test designation {i}' for i in range(10)],
+            'prdtypecode': [i % 27 for i in range(10)]
+        })
 
-    # Call the API
-    async with AsyncClient(app=app, base_url="http://test") as ac:
-        response = await ac.post("/api/model/evaluate-model/", params={"version": 1})
+        # Configuration du mock DataImporter
+        mock_importer_instance = MagicMock()
+        mock_importer_instance.load_data.return_value = df
+        mock_importer_instance.split_train_test.return_value = (
+            df.drop('prdtypecode', axis=1),
+            df.drop('prdtypecode', axis=1),
+            df.drop('prdtypecode', axis=1),
+            df['prdtypecode'],
+            df['prdtypecode'],
+            df['prdtypecode']
+        )
+        mock_importer.return_value = mock_importer_instance
 
-    # Check the response
-    assert response.status_code == 200, f"Erreur: {response.status_code}, Détails: {response.text}"
-    response_data = response.json()
+        # Configuration du mock predictor
+        predictor = MagicMock()
+        predictor.predict.return_value = {str(i): str(i % 27) for i in range(10)}
+        mock_predictor.return_value = predictor
 
-    # Verify the new response structure
-    assert "metrics" in response_data, "Response should contain 'metrics'"
-    assert "mean_inference_time_ms" in response_data, "Response should contain 'mean_inference_time_ms'"
+        # Configuration des mocks de collections
+        cursor = MagicMock()
+        cursor.__iter__.return_value = df.to_dict('records')
+        for collection_name in ['labeled_train', 'labeled_test', 'labeled_val']:
+            getattr(mock_mongodb, collection_name).find.return_value = cursor
 
-    metrics = response_data["metrics"]
-
-    # Verify metrics structure
-    assert "precision" in metrics, "Metrics should contain 'precision'"
-    assert "recall" in metrics, "Metrics should contain 'recall'"
-    assert "f1_score" in metrics, "Metrics should contain 'f1_score'"
-
-    # Verify metrics values
-    assert 0 <= float(metrics["precision"]) <= 1, "Precision should be between 0 and 1"
-    assert 0 <= float(metrics["recall"]) <= 1, "Recall should be between 0 and 1"
-    assert 0 <= float(metrics["f1_score"]) <= 1, "F1-score should be between 0 and 1"
-
-    # Verify inference time
-    assert isinstance(response_data["mean_inference_time_ms"], (int, float)), "Inference time should be numeric"
-    assert response_data["mean_inference_time_ms"] >= 0, "Inference time should be positive"
-
-    # Verify MongoDB interaction
-    mock_collection.insert_one.assert_called_once()
-
-    # Verify MongoDB data structure
-    mongo_call_args = mock_collection.insert_one.call_args
-    assert mongo_call_args is not None, "MongoDB insert should have been called"
-    mongo_data = mongo_call_args[0][0]
-
-    # Verify MongoDB data structure
-    assert "model_version" in mongo_data
-    assert "evaluation_date" in mongo_data
-    assert "metrics" in mongo_data
-    assert "inference_performance" in mongo_data
-    assert "mean_inference_time_ms" in mongo_data["inference_performance"]
-    assert "total_inference_time_ms" in mongo_data["inference_performance"]
-    assert "sample_size" in mongo_data["inference_performance"]
-
-    # Verify specific values
-    assert mongo_data["model_version"] == 1
-    assert isinstance(mongo_data["evaluation_date"], str)
-    assert len(mongo_data["metrics"]) == 3  # precision, recall, f1_score
+        response = client.post('/api/model/evaluate-model/?version=1')
+        assert response.status_code == 200

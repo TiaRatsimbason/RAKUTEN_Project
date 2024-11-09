@@ -8,8 +8,7 @@ import pandas as pd
 import numpy as np
 import uvloop
 import mlflow
-import keras
-from fastapi import HTTPException, Query
+from fastapi import HTTPException, Query, APIRouter
 from pymongo import MongoClient
 from pydantic import BaseModel
 from bson import ObjectId
@@ -17,31 +16,24 @@ from PIL import Image
 import io
 from tensorflow.keras.preprocessing.image import img_to_array
 from tensorflow.keras.utils import to_categorical
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from tqdm import tqdm
 from datetime import datetime
-from src.scripts.data.import_raw_data import import_raw_data
-from src.scripts.data.make_dataset import main as make_dataset
-from src.scripts.features.build_features import DataImporter, TextPreprocessor, ImagePreprocessor
-from src.scripts.data.check_structure import check_existing_folder, check_existing_file
 import sys
-from src.scripts.data.make_dataset import main as make_dataset_main
 import shutil
-from src.scripts.data.setup_data_cloud import create_directory_structure, copy_files_and_folders_from_drive
 import platform
 import time
-from src.config.mongodb import async_db, async_fs, sync_db, sync_client
+from src.scripts.data.import_raw_data import import_raw_data
+from src.scripts.features.build_features import DataImporter, TextPreprocessor
+from src.scripts.data.check_structure import check_existing_folder, check_existing_file
+from src.scripts.data.setup_data_cloud import create_directory_structure, copy_files_and_folders_from_drive
+from src.config.mongodb import async_db, async_fs, sync_db, sync_client, sync_fs
 import nltk
 import ssl
-from fastapi import APIRouter
-from sklearn.metrics import precision_score, recall_score, f1_score
 from src.scripts.predict import load_predictor
-
-# Configuration MongoDB
-MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://admin:motdepasseadmin@mongo:27017/")
-client = MongoClient(MONGODB_URI)
-db = client["rakuten_db"]  # Nom de la base de données
-collection = db["model_evaluation"]  # Nom de la collection pour les évaluations
+from pymongo.errors import PyMongoError
+from tenacity import retry, stop_after_attempt, wait_exponential
+from gridfs import GridFS
 
 # Configuration optimale d'asyncio
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
@@ -55,7 +47,7 @@ else:
     ssl._create_default_https_context = _create_unverified_https_context
 
 # Configuration du logger
-logging.basicConfig(level=logging.INFO)  
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -65,11 +57,10 @@ BATCH_SIZE = 1000
 MAX_WORKERS = os.cpu_count()
 CHUNK_SIZE = 5000
 
-
 class DataPipelineMetadata(BaseModel):
     """Modèle Pydantic pour les métadonnées du pipeline"""
     execution_date: str
-    raw_data_files: list = []  
+    raw_data_files: list = []
     processed_records: int
     features_info: dict
     status: str
@@ -116,7 +107,6 @@ def process_text_chunk(chunk_data):
         logger.error(f"Error in process_text_chunk: {str(e)}")
         raise
 
-
 @router.post("/load-data/")
 async def load_data():
     """
@@ -150,7 +140,7 @@ async def load_data():
             loader = MongoDBDataLoader()
             
             # Enregistrer le début du chargement
-            db["data_pipeline"].insert_one({
+            sync_db["data_pipeline"].insert_one({
                 "status": "loading",
                 "start_time": datetime.now().isoformat(),
                 "files": preprocessed_files
@@ -160,7 +150,7 @@ async def load_data():
             loader.load_all_data()
             
             # Mettre à jour le statut
-            db["data_pipeline"].insert_one({
+            sync_db["data_pipeline"].insert_one({
                 "status": "completed",
                 "end_time": datetime.now().isoformat(),
                 "files": preprocessed_files
@@ -173,7 +163,7 @@ async def load_data():
             
         except Exception as load_error:
             # Enregistrer l'erreur
-            db["data_pipeline"].insert_one({
+            sync_db["data_pipeline"].insert_one({
                 "status": "failed",
                 "error_time": datetime.now().isoformat(),
                 "error_message": str(load_error),
@@ -225,12 +215,14 @@ async def get_data_status():
         )
         
         # Obtenir quelques exemples de métadonnées pour vérification
-        example_test = db.fs.files.find_one({"metadata.original_path": {"$regex": "/image_test/"}})
-        example_train = db.fs.files.find_one({"metadata.original_path": {"$regex": "/image_train/"}})
+        # Utiliser le client synchrone pour GridFS
+        fs = GridFS(sync_db)
+        example_test_file = fs.find_one({"metadata.original_path": {"$regex": "/image_test/"}})
+        example_train_file = fs.find_one({"metadata.original_path": {"$regex": "/image_train/"}})
         
         image_examples = {
-            "test": example_test["metadata"] if example_test else None,
-            "train": example_train["metadata"] if example_train else None
+            "test": example_test_file.metadata if example_test_file else None,
+            "train": example_train_file.metadata if example_train_file else None
         }
         
         return {
@@ -398,13 +390,13 @@ async def prepare_data():
 
                     async for file_doc in cursor:
                         try:
-                            product_id = file_doc["metadata"]["productid"]
-                            image_id = file_doc["metadata"]["imageid"]
+                            product_id = str(file_doc["metadata"]["productid"])
+                            image_id = str(file_doc["metadata"]["imageid"])
                             key = f"{product_id}_{image_id}"
                             
                             matching_row = batch_df[
-                                (batch_df['productid'].astype(str) == str(product_id)) & 
-                                (batch_df['imageid'].astype(str) == str(image_id))
+                                (batch_df['productid'].astype(str) == product_id) &
+                                (batch_df['imageid'].astype(str) == image_id)
                             ]
                             
                             if not matching_row.empty:
@@ -440,6 +432,9 @@ async def prepare_data():
                                 else:
                                     logger.warning(f"No chunks found for image {key}")
                                 
+                            else:
+                                logger.warning(f"No matching row found for image {key}")
+                            
                         except Exception as e:
                             logger.warning(f"Error processing image {key}: {e}")
                             continue
@@ -487,12 +482,12 @@ async def prepare_data():
                 logger.error(f"Image processing failed: {str(image_error)}")
                 raise
 
-# 5. Stockage MongoDB
+            # 5. Stockage MongoDB
             async def prepare_and_insert_records(data, mappings, collection_name):
                 try:
                     records = []
                     for _, row in data.iterrows():
-                        key = f"{row['productid']}_{row['imageid']}"
+                        key = f"{str(row['productid'])}_{str(row['imageid'])}"
                         record = row.to_dict()
                         record['gridfs_file_id'] = mappings.get(key)
                         records.append(record)
@@ -584,21 +579,6 @@ async def prepare_data():
             await async_db['pipeline_metadata'].insert_one(metadata)
 
             logger.info("Data preparation pipeline completed successfully")
-            
-            def clean_metadata(data):
-                """Convertit les ObjectId en strings dans le dictionnaire metadata"""
-                if isinstance(data, dict):
-                    return {
-                        key: clean_metadata(value) if isinstance(value, (dict, list)) else str(value) 
-                        if hasattr(value, '__str__') and not isinstance(value, (int, float, bool, str)) 
-                        else value
-                        for key, value in data.items()
-                    }
-                elif isinstance(data, list):
-                    return [clean_metadata(item) for item in data]
-                elif hasattr(data, '__str__') and not isinstance(data, (int, float, bool, str)):
-                    return str(data)
-                return data
 
             # Nettoyer les ObjectId avant de retourner la réponse
             metadata = clean_metadata(metadata)
@@ -630,7 +610,7 @@ async def prepare_data():
             status_code=500,
             detail=f"Pipeline error: {error_message}"
         )
-    
+
 @router.post("/train-model/")
 async def train_model():
     """
@@ -663,29 +643,28 @@ async def train_model():
             status_code=500, 
             detail=f"An error occurred during model training: {str(e)}"
         )
-            
-    except Exception as e:
-        logger.error("API endpoint error:", exc_info=True)
-        raise HTTPException(
-            status_code=500, 
-            detail=f"An error occurred during model training: {str(e)}"
-        )
-
 
 @router.post("/predict/")
 async def predict(version: int = Query(1, description="Version number of the model to use")):
     try:
         # Utiliser MongoDB pour charger les données de test
         logger.info("Loading test data...")
-        df = pd.DataFrame(list(sync_db.preprocessed_x_test.find({}, {'_id': 0})))[:10]
+        df = pd.DataFrame(list(sync_db.labeled_test.find()))[:10]
         logger.info(f"Loaded {len(df)} test samples")
+
+        # Vérifier que 'gridfs_file_id' est présent
+        if 'gridfs_file_id' not in df.columns:
+            raise HTTPException(
+                status_code=400,
+                detail="The 'gridfs_file_id' column is missing in the test data"
+            )
 
         # Charger le prédicteur
         predictor = load_predictor(version)
 
-        # Appel de la méthode de prédiction avec image_type="test"
+        # Appel de la méthode de prédiction sans image_type
         try:
-            predictions = predictor.predict(df, image_type="test")  # Spécifier image_type="test"
+            predictions = predictor.predict(df)
             
             if isinstance(predictions, dict) and "error" in predictions:
                 raise HTTPException(
@@ -716,36 +695,32 @@ async def predict(version: int = Query(1, description="Version number of the mod
             detail=f"An error occurred: {str(e)}"
         )
 
-
 @router.post("/evaluate-model/")
 async def evaluate_model(version: int = Query(1, description="Version number of the model to use")):
     try:
         logger.info(f"Starting model evaluation for version {version}")
         
         try:
-            # Chargement et préparation des données avec MongoDB
-            logger.info("Loading and preparing data...")
-            data_importer = DataImporter()
+            # 1. Chargement des données de test depuis MongoDB
+            logger.info("Loading test data from 'labeled_test' collection...")
+            test_data = pd.DataFrame(list(sync_db.labeled_test.find()))
             
-            # Utiliser le chargement par chunks pour les gros fichiers
-            df = data_importer.load_data()
-            _, _, X_eval, _, _, y_eval = data_importer.split_train_test(df)
+            if test_data.empty:
+                raise HTTPException(
+                    status_code=404, 
+                    detail="No test data found in 'labeled_test' collection"
+                )
             
-            # Réduire l'échantillon initial et utiliser une stratification
-            sample_size = min(int(len(X_eval) * 0.3), 1000)  # Max 1000 échantillons
+            # Extraire les features et labels
+            X_eval = test_data.drop(['label'], axis=1)
+            y_eval = test_data['label']
             
-            # Échantillonnage stratifié pour maintenir la distribution des classes
-            X_eval_sample = X_eval.groupby(y_eval, group_keys=False).apply(
-                lambda x: x.sample(n=min(len(x), int(sample_size/len(y_eval.unique()))), 
-                                 random_state=42)
-            ).reset_index(drop=True)
+            logger.info(f"Loaded {len(X_eval)} test samples")
             
-            y_eval_sample = y_eval.loc[X_eval_sample.index]
-            
-            # Nettoyage mémoire immédiat et libération des ressources
-            del df, X_eval, y_eval
-            import gc
-            gc.collect()
+            # Optionnel : Échantillonner les données pour limiter la taille
+            sample_size = min(len(X_eval), 1000)  # Limiter à 1000 échantillons par exemple
+            X_eval_sample = X_eval.sample(n=sample_size, random_state=42).reset_index(drop=True)
+            y_eval_sample = y_eval.loc[X_eval_sample.index].reset_index(drop=True)
             
             logger.info(f"Prepared evaluation dataset with {len(X_eval_sample)} samples")
             
@@ -753,11 +728,11 @@ async def evaluate_model(version: int = Query(1, description="Version number of 
             logger.error(f"Data loading error: {data_error}", exc_info=True)
             raise HTTPException(
                 status_code=500,
-                detail=f"Error loading data: {str(data_error)}"
+                detail=f"Error loading test data: {str(data_error)}"
             )
 
         try:
-            # 3. Prédictions optimisées avec traitement par lots
+            # 2. Prédictions avec le modèle chargé
             logger.info("Starting predictions...")
             predictor = load_predictor(version)
             start_time = time.time()
@@ -772,8 +747,10 @@ async def evaluate_model(version: int = Query(1, description="Version number of 
                 end_idx = min((batch_idx + 1) * BATCH_SIZE, len(X_eval_sample))
                 
                 batch = X_eval_sample.iloc[start_idx:end_idx]
-                batch_predictions = predictor.predict(batch, image_type="train")
-                predictions.update(batch_predictions)
+                batch_predictions = predictor.predict(batch)
+                
+                # Mettre à jour les prédictions avec les indices corrects
+                predictions.update({str(i): pred for i, pred in zip(range(start_idx, end_idx), batch_predictions.values())})
                 
                 # Log de progression
                 logger.info(f"Processed batch {batch_idx + 1}/{total_batches}")
@@ -782,7 +759,7 @@ async def evaluate_model(version: int = Query(1, description="Version number of 
                 del batch_predictions
                 gc.collect()
             
-            inference_time = (time.time() - start_time) * 1000
+            inference_time = (time.time() - start_time) * 1000  # Temps en millisecondes
             mean_inference_time = inference_time / len(X_eval_sample)
             
             logger.info(f"Predictions completed in {inference_time:.2f}ms")
@@ -791,37 +768,39 @@ async def evaluate_model(version: int = Query(1, description="Version number of 
             logger.error(f"Prediction error: {pred_error}", exc_info=True)
             raise HTTPException(
                 status_code=500,
-                detail=f"Prediction error: {str(pred_error)}"
+                detail=f"Error during prediction: {str(pred_error)}"
             )
 
         try:
-            # 4. Calcul des métriques optimisé
-            logger.info("Computing metrics...")
+            # 3. Calcul des métriques
+            logger.info("Computing evaluation metrics...")
             
-            # Vectoriser la conversion des prédictions
-            y_pred = np.zeros(len(X_eval_sample), dtype=int)
-            for i, pred in predictions.items():
-                y_pred[int(i)] = int(pred)
+            # Convertir les prédictions en un tableau numpy
+            y_pred = np.array([int(predictions[str(i)]) for i in range(len(X_eval_sample))])
+            y_true = y_eval_sample.values
             
-            # Vérification de la cohérence des données
-            if len(y_pred) != len(y_eval_sample):
-                raise ValueError(f"Prediction length mismatch: {len(y_pred)} vs {len(y_eval_sample)}")
+            # Vérifier la cohérence des données
+            if len(y_pred) != len(y_true):
+                raise ValueError(f"Prediction length mismatch: {len(y_pred)} vs {len(y_true)}")
                 
+            # Calcul des métriques globales
             metrics = {
-                "precision": float(precision_score(y_eval_sample, y_pred, average="macro", zero_division=0)),
-                "recall": float(recall_score(y_eval_sample, y_pred, average="macro", zero_division=0)),
-                "f1_score": float(f1_score(y_eval_sample, y_pred, average="macro", zero_division=0))
+                "precision": float(precision_score(y_true, y_pred, average="macro", zero_division=0)),
+                "recall": float(recall_score(y_true, y_pred, average="macro", zero_division=0)),
+                "f1_score": float(f1_score(y_true, y_pred, average="macro", zero_division=0))
             }
             
-            # Ajouter des métriques par classe
+            # Calcul des métriques par classe
             class_metrics = {
-                f"class_{label}_f1": score 
+                f"class_{label}_f1": float(score) 
                 for label, score in zip(
-                    y_eval_sample.unique(),
-                    f1_score(y_eval_sample, y_pred, average=None, zero_division=0)
+                    np.unique(y_true),
+                    f1_score(y_true, y_pred, average=None, zero_division=0)
                 )
             }
             metrics.update(class_metrics)
+            
+            logger.info("Metrics computed successfully")
             
         except Exception as metric_error:
             logger.error(f"Metrics calculation error: {metric_error}", exc_info=True)
@@ -831,10 +810,10 @@ async def evaluate_model(version: int = Query(1, description="Version number of 
             )
 
         try:
-            # 5. Sauvegarde MongoDB avec retry
-            from pymongo.errors import PyMongoError
-            from tenacity import retry, stop_after_attempt, wait_exponential
-            
+            # 4. Sauvegarde des résultats dans MongoDB
+            logger.info("Saving evaluation results to MongoDB...")
+            collection = sync_db["model_evaluation"]
+
             @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
             def save_to_mongodb(data):
                 collection.insert_one(data)
@@ -852,7 +831,7 @@ async def evaluate_model(version: int = Query(1, description="Version number of 
             }
             
             save_to_mongodb(evaluation_data)
-            logger.info("Results saved to MongoDB")
+            logger.info("Evaluation results saved successfully")
             
         except Exception as db_error:
             logger.error(f"Database error: {db_error}", exc_info=True)
@@ -868,5 +847,5 @@ async def evaluate_model(version: int = Query(1, description="Version number of 
         logger.error(f"Unexpected error in evaluate_model: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"An unexpected error occurred: {str(e)}"
+            detail=f"An unexpected error occurred during evaluation: {str(e)}"
         )

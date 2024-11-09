@@ -1,22 +1,15 @@
 # Standard library imports
-from datetime import datetime  # Changement ici
-import json
+from datetime import datetime
 import os
 import logging
-import os
 
 # Third-party imports
 import pandas as pd
-import numpy as np
-import keras
 import mlflow
-from sklearn.metrics import accuracy_score
-from bson import ObjectId
 
 # Local imports
-from src.scripts.features.build_features import DataImporter, TextPreprocessor, ImagePreprocessor
-from src.scripts.models.train_model import TextLSTMModel, ImageVGG16Model, concatenate
-from src.config.mongodb import sync_db, async_db, sync_fs, async_fs
+from src.scripts.features.build_features import TextPreprocessor
+from src.config.mongodb import sync_db
 
 # Suppression du warning Git MLflow
 os.environ['GIT_PYTHON_REFRESH'] = 'quiet'
@@ -47,8 +40,8 @@ def train_and_save_model():
                 raise ValueError("Required labeled collections not found in MongoDB")
 
             # Vérifier que les images sont disponibles
-            train_images = sync_db.fs.files.count_documents({"metadata.split": "train"})
-            val_images = sync_db.fs.files.count_documents({"metadata.split": "validation"})
+            train_images = sync_db['fs.files'].count_documents({"metadata.split": "train"})
+            val_images = sync_db['fs.files'].count_documents({"metadata.split": "validation"})
             
             if train_images == 0 or val_images == 0:
                 raise ValueError("No images found in GridFS for training/validation splits")
@@ -59,15 +52,15 @@ def train_and_save_model():
             train_data = pd.DataFrame(list(sync_db.labeled_train.find({}, {'_id': 0})))
             val_data = pd.DataFrame(list(sync_db.labeled_val.find({}, {'_id': 0})))
             
-            # Séparer features et labels
-            X_train = train_data.drop(['label', 'gridfs_file_id'], axis=1)
-            y_train = train_data['label']
-            X_val = val_data.drop(['label', 'gridfs_file_id'], axis=1)
-            y_val = val_data['label']
+            # Vérifier que gridfs_file_id est présent
+            if 'gridfs_file_id' not in train_data.columns or 'gridfs_file_id' not in val_data.columns:
+                raise ValueError("gridfs_file_id column is missing in the labeled data")
             
-            # Ajouter les références GridFS pour les images
-            X_train['gridfs_image_ref'] = train_data['gridfs_file_id']
-            X_val['gridfs_image_ref'] = val_data['gridfs_file_id']
+            # Séparer features et labels (ne pas supprimer gridfs_file_id)
+            X_train = train_data.drop(['label'], axis=1)
+            y_train = train_data['label']
+            X_val = val_data.drop(['label'], axis=1)
+            y_val = val_data['label']
             
             logger.info(f"Loaded {len(X_train)} training samples and {len(X_val)} validation samples")
 
@@ -76,10 +69,9 @@ def train_and_save_model():
             text_preprocessor.preprocess_text_in_df(X_train, ["description"])
             text_preprocessor.preprocess_text_in_df(X_val, ["description"])
 
-            # 3. Prétraiter les images
-            image_preprocessor = ImagePreprocessor(image_type="train")
-            image_preprocessor.preprocess_images_in_df(X_train)
-            image_preprocessor.preprocess_images_in_df(X_val)
+            # 3. Pas besoin de prétraiter les images ici
+            # Le prétraitement des images se fera pendant l'entraînement du modèle
+            # car les images sont chargées directement depuis GridFS pendant l'entraînement
 
             # 4. Enregistrer les paramètres d'entraînement
             mlflow.log_param("num_classes", NUM_CLASSES)
@@ -95,3 +87,6 @@ def train_and_save_model():
         except Exception as e:
             logger.error(f"Training pipeline failed: {str(e)}", exc_info=True)
             raise
+
+if __name__ == "__main__":
+    train_and_save_model()

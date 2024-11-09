@@ -5,9 +5,6 @@ from bs4 import BeautifulSoup
 import re
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
-from nltk.stem import WordNetLemmatizer
-import pickle
-import math
 import logging
 import json
 from src.config.mongodb import sync_db, sync_fs
@@ -100,7 +97,7 @@ class DataImporter:
 
         for _, group in grouped_data_test:
             samples = group.sample(n=val_samples_per_class, random_state=42)
-            X_val_samples.append(samples[["description", "productid", "imageid"]])
+            X_val_samples.append(samples.drop(["prdtypecode"], axis=1))
             y_val_samples.append(samples["prdtypecode"])
 
         X_val = pd.concat(X_val_samples)
@@ -111,37 +108,63 @@ class DataImporter:
         y_val = y_val.sample(frac=1, random_state=42).reset_index(drop=True)
 
         logger.info(f"Split completed: Train={len(X_train)}, Val={len(X_val)}, Test={len(X_test)}")
+
+        # Réorganiser les images dans GridFS et ajouter gridfs_file_id
+        self.reorganize_images_in_gridfs(X_train, "train")
+        self.reorganize_images_in_gridfs(X_val, "validation")
+        self.reorganize_images_in_gridfs(X_test, "test")
+
         return X_train, X_val, X_test, y_train, y_val, y_test
 
+    def reorganize_images_in_gridfs(self, df, split_name):
+        """
+        Réorganise les images dans GridFS en ajoutant le champ 'split' aux métadonnées
+        et en obtenant le gridfs_file_id pour chaque image.
+        """
+        fs = self.fs
+        gridfs_file_ids = []
+        for _, row in df.iterrows():
+            imageid = str(row['imageid'])
+            productid = str(row['productid'])
+            try:
+                # Trouver l'image dans GridFS
+                grid_out = fs.find_one({
+                    "metadata.imageid": imageid,
+                    "metadata.productid": productid,
+                    "metadata.original_path": {"$regex": "/image_"}
+                })
+                if not grid_out:
+                    logger.warning(f"Image not found in GridFS for imageid={imageid}, productid={productid}")
+                    gridfs_file_ids.append(None)
+                    continue
+                
+                # Copier l'image avec les nouvelles métadonnées
+                new_file_id = fs.put(grid_out.read(), filename=grid_out.filename, metadata={
+                    "imageid": imageid,
+                    "productid": productid,
+                    "split": split_name
+                })
+                
+                gridfs_file_ids.append(str(new_file_id))
+                
+            except Exception as e:
+                logger.error(f"Error processing image for imageid={imageid}, productid={productid}: {e}")
+                gridfs_file_ids.append(None)
+        
+        df['gridfs_file_id'] = gridfs_file_ids
 
 class ImagePreprocessor:
-    def __init__(self, image_type="train"):
-        """
-        Initialise ImagePreprocessor pour utiliser GridFS
-        
-        Args:
-            image_type (str): "train" ou "test" pour spécifier quel ensemble d'images utiliser
-        """
+    def __init__(self):
         self.fs = sync_fs
-        self.image_type = image_type
-        logger.info(f"Initialized ImagePreprocessor for {image_type} images")
+        logger.info("Initialized ImagePreprocessor")
         
     def preprocess_images_in_df(self, df):
-        """
-        Prétraite les images en utilisant GridFS selon le type (train/test)
-        """
-        logger.info(f"Loading and preprocessing {self.image_type} images from GridFS...")
+        logger.info("Loading and preprocessing images from GridFS using imageid and productid...")
         from src.scripts.data.gridfs_image_handler import GridFSImageHandler
         
-        image_pattern = f"/image_{self.image_type}/"
-        
-        # Vérifier que les images existent dans GridFS
-        count = sync_db.fs.files.count_documents({"metadata.original_path": {"$regex": image_pattern}})
-        logger.info(f"Found {count} {self.image_type} images in GridFS")
-        
         with GridFSImageHandler() as handler:
-            # Extraire les images du bon type
-            image_paths = handler.batch_extract_images(df, image_type=self.image_type)
+            # Utiliser la méthode batch_extract_images_by_ids
+            image_paths = handler.batch_extract_images_by_ids(df)
             df["image_path"] = df.apply(
                 lambda row: image_paths.get(f"{row['imageid']}_{row['productid']}", None),
                 axis=1
@@ -150,11 +173,10 @@ class ImagePreprocessor:
         # Vérifier que toutes les images ont été trouvées
         missing_images = df[df["image_path"].isna()]
         if not missing_images.empty:
-            logger.warning(f"Missing {len(missing_images)} {self.image_type} images in GridFS")
+            logger.warning(f"Missing {len(missing_images)} images in GridFS")
             logger.warning(f"First few missing images: {missing_images[['imageid', 'productid']].head()}")
             
-        logger.info(f"{self.image_type} image preprocessing completed")
-
+        logger.info("Image preprocessing completed")
 
 class TextPreprocessor:
     def __init__(self):
@@ -164,71 +186,38 @@ class TextPreprocessor:
         self.stop_words = set(stopwords.words('french'))
         
     def preprocess_text(self, text):
-        """
-        Prétraite un texte
-        """
         if pd.isna(text) or text is None:
             logger.warning("Found null text value, replacing with empty string")
             return ""
             
         try:
-            # Conversion en string si nécessaire
             text = str(text)
-            
-            # Nettoyage HTML
             text = BeautifulSoup(text, "html.parser").get_text()
-            
-            # Conversion en minuscules
             text = text.lower()
-            
-            # Suppression de la ponctuation et des chiffres
             text = re.sub(r'[^\w\s]', ' ', text)
             text = re.sub(r'\d+', ' ', text)
-            
-            # Tokenization
             words = word_tokenize(text)
-            
-            # Suppression des stop words
             words = [word for word in words if word not in self.stop_words]
-            
-            # Rejoindre les mots
             text = ' '.join(words)
-            
-            # Supprimer les espaces multiples
             text = re.sub(r'\s+', ' ', text).strip()
-            
             return text
-            
         except Exception as e:
             logger.error(f"Error preprocessing text: {str(e)}")
             return ""
 
     def preprocess_text_in_df(self, df, columns):
-        """
-        Prétraite les colonnes textuelles d'un DataFrame
-        """
         logger.info(f"Preprocessing text columns: {columns}")
         try:
-            # Vérifier les valeurs nulles
             for column in columns:
                 null_count = df[column].isnull().sum()
                 if null_count > 0:
                     logger.warning(f"Found {null_count} null values in column {column}")
-                
-                # Remplacer les valeurs nulles par une chaîne vide
                 df[column] = df[column].fillna("")
-                
-                # Appliquer le prétraitement
                 df[column] = df[column].apply(self.preprocess_text)
-                
             logger.info("Text preprocessing completed")
-            
         except Exception as e:
             logger.error(f"Error in preprocess_text_in_df: {str(e)}", exc_info=True)
             raise
 
     def __call__(self, text):
-        """
-        Permet d'utiliser la classe comme une fonction
-        """
         return self.preprocess_text(text)

@@ -31,6 +31,8 @@ uvicorn = "^0.32.0"
 tqdm = "^4.65.0"
 pytest = "^8.3.3"
 uvloop = "^0.21.0"
+aiohttp = "^3.10.10"
+tenacity = "^9.0.0"
 
 [tool.poetry.group.test.dependencies]
 httpx = "^0.27.2"

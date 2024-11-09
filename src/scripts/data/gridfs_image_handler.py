@@ -2,8 +2,10 @@ import os
 import tempfile
 import logging
 from typing import Dict
+from bson import ObjectId
+from PIL import Image
 import gridfs
-from src.config.mongodb import sync_db, async_db, sync_fs, async_fs
+from src.config.mongodb import sync_db, sync_fs
 
 # Configuration du logger
 logger = logging.getLogger(__name__)
@@ -12,7 +14,6 @@ class GridFSImageHandler:
     def __init__(self):
         self.db = sync_db
         self.fs = sync_fs
-        self.async_fs = async_fs
         self.temp_dir = None
 
     def __enter__(self):
@@ -26,57 +27,92 @@ class GridFSImageHandler:
             import shutil
             shutil.rmtree(self.temp_dir)
 
-    def get_image_path(self, imageid, productid, image_type="train"):
+    def get_image_by_file_id(self, gridfs_file_id):
         """
-        Récupère l'image depuis GridFS selon son type
+        Récupère l'image depuis GridFS en utilisant gridfs_file_id
         """
         try:
-            # Chercher l'image avec le bon type (train/test)
-            image_pattern = f"/image_{image_type}/"
-            image_file = self.fs.find_one({
-                "metadata.imageid": str(imageid),
-                "metadata.productid": str(productid),
-                "metadata.original_path": {"$regex": image_pattern}
-            })
-            
-            if not image_file:
+            grid_out = self.fs.get(ObjectId(gridfs_file_id))
+            if not grid_out:
                 raise FileNotFoundError(
-                    f"{image_type} image not found for imageid={imageid}, productid={productid}"
+                    f"Image not found in GridFS for file_id={gridfs_file_id}"
                 )
-            return image_file._id
-            
+            return grid_out
         except Exception as e:
-            logger.error(f"Error retrieving {image_type} image from GridFS: {e}")
+            logger.error(f"Error retrieving image from GridFS with file_id {gridfs_file_id}: {e}")
             raise
 
-    def batch_extract_images(self, df, image_type="train") -> Dict[str, str]:
+    def batch_extract_images(self, df) -> Dict[str, str]:
         """
-        Extrait un lot d'images selon leur type et les sauvegarde dans un dossier temporaire
+        Extrait un lot d'images en utilisant gridfs_file_id et les sauvegarde dans un dossier temporaire
+
+        Args:
+            df (pd.DataFrame): DataFrame contenant les colonnes 'gridfs_image_ref'
+
+        Returns:
+            Dict[str, str]: Dictionnaire mapping gridfs_file_id à chemin local de l'image extraite
         """
-        logger.info(f"Batch extracting {image_type} images from GridFS")
+        logger.info(f"Batch extracting images from GridFS using gridfs_file_id")
         image_paths = {}
         
         for _, row in df.iterrows():
+            gridfs_file_id = row.get('gridfs_image_ref')
+            if not gridfs_file_id:
+                logger.warning(f"No gridfs_file_id found for row with index {_}")
+                continue
+
             try:
-                # Obtenir l'ID de l'image
-                file_id = self.get_image_path(
-                    row['imageid'], 
-                    row['productid'],
-                    image_type=image_type
-                )
+                # Récupérer l'image depuis GridFS
+                grid_out = self.fs.get(ObjectId(gridfs_file_id))
+                if not grid_out:
+                    raise FileNotFoundError(f"Image not found in GridFS for file_id={gridfs_file_id}")
                 
                 # Créer le chemin temporaire pour l'image
-                temp_path = os.path.join(self.temp_dir, f"{row['imageid']}_{row['productid']}.jpg")
+                temp_path = os.path.join(self.temp_dir, f"{gridfs_file_id}.jpg")
                 
-                # Récupérer et sauvegarder l'image
-                grid_out = self.fs.get(file_id)
+                # Sauvegarder l'image
                 with open(temp_path, 'wb') as f:
                     f.write(grid_out.read())
                 
-                image_paths[f"{row['imageid']}_{row['productid']}"] = temp_path
+                image_paths[str(gridfs_file_id)] = temp_path
                 
             except Exception as e:
-                logger.warning(f"Failed to extract image: {e}")
+                logger.warning(f"Failed to extract image with file_id {gridfs_file_id}: {e}")
                 continue
                 
+        return image_paths  # Ajout de cette ligne pour renvoyer le dictionnaire des chemins d'images
+
+    def batch_extract_images_by_ids(self, df) -> Dict[str, str]:
+        """
+        Extrait un lot d'images en utilisant imageid et productid et les sauvegarde dans un dossier temporaire
+        """
+        logger.info(f"Batch extracting images from GridFS using imageid and productid")
+        image_paths = {}
+        
+        for _, row in df.iterrows():
+            imageid = str(row['imageid'])
+            productid = str(row['productid'])
+            try:
+                # Rechercher l'image dans GridFS
+                grid_out = self.fs.find_one({
+                    "metadata.imageid": imageid,
+                    "metadata.productid": productid,
+                    "metadata.original_path": {"$regex": "/image_"}
+                })
+                if not grid_out:
+                    raise FileNotFoundError(f"Image not found in GridFS for imageid={imageid}, productid={productid}")
+                
+                # Créer le chemin temporaire pour l'image
+                temp_path = os.path.join(self.temp_dir, f"{imageid}_{productid}.jpg")
+                
+                # Sauvegarder l'image
+                with open(temp_path, 'wb') as f:
+                    f.write(grid_out.read())
+                
+                image_paths[f"{imageid}_{productid}"] = temp_path
+                
+            except Exception as e:
+                logger.warning(f"Failed to extract image with imageid={imageid}, productid={productid}: {e}")
+                continue
+            
         return image_paths
