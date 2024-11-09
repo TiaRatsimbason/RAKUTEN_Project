@@ -94,37 +94,38 @@ Once you have downloaded the GitHub repository and the data (required before run
 >
 > `[http://localhost:8080/]` <- You can access the Airflow UI  at this address
 >
->##API ENDPOINTS
-#1. /load-data/
+>##API ENDPOINTS##
+>
+>#1. /load-data/#
 
 Checks for required files existence.
 Loads data using MongoDBDataLoader (src\scripts\data\mongodb_data_loader.py).
 Saves status in the data_pipeline collection on rakuten_db.
 
-#2. /data-status/
+>#2. /data-status/
 
 Verifies required collections existence.
 Counts number of documents in each collection.
 Checks for images presence in GridFS.
 
-#3. /prepare-data/
+>#3. /prepare-data/
 
 Performs data preprocessing.
 Splits data into training, validation and test sets.
 Processes images and stores them in GridFS with appropriate metadata (rakuten_db - pipeline_metadata).
 Saves labeled data in MongoDB.
 
-#4. /train-model/
+>#4. /train-model/
 
 Calls train_and_save_model() function from src.scripts.main (rakuten_db - model_metadata).
 
-#5. /predict/
+>#5. /predict/
 
 Loads test data from MongoDB.
 Loads predictor and performs predictions.
 Saves predictions in MongoDB (rakuten_db - predictions collection).
 
-#6. /evaluate-model/
+>#6. /evaluate-model/
 
 Loads labeled test data.
 Makes predictions on this data.
