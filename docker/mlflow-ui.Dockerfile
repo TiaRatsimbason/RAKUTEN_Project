@@ -1,28 +1,39 @@
-# Utiliser une image Python basée sur Debian
-FROM python:3.10.14-slim-bullseye
+FROM python:3.10.14-slim
 
-# Installer les dépendances système nécessaires pour MLFlow et pyarrow
+# Installer les dépendances système
 RUN apt-get update && apt-get install -y \
     build-essential \
-    libffi-dev \
-    libssl-dev \
-    python3-dev \
     curl \
     git \
-    cmake \
-    && apt-get clean
+    && rm -rf /var/lib/apt/lists/*
 
-# Mettre à jour pip à la dernière version
-RUN pip install --upgrade pip
+# Installer MLflow et autres dépendances
+RUN pip install --no-cache-dir \
+    mlflow==2.8.0 \
+    psutil \
+    pymongo \
+    pandas \
+    scikit-learn
 
-# Installer MLFlow et pyarrow
-RUN pip install --no-cache-dir mlflow pyarrow
+# Créer le répertoire de travail
+WORKDIR /app
 
-# Créer les volumes nécessaires pour les artefacts MLFlow
-VOLUME ["/app/mlruns"]
+# Créer les répertoires nécessaires
+RUN mkdir -p /app/mlruns /app/models && \
+    chmod -R 777 /app/mlruns /app/models
 
-# Exposer le port 5000 pour l'interface MLFlow
+# Exposer le port MLflow
 EXPOSE 5000
 
-# Lancer le serveur MLFlow avec les chemins corrects
-CMD ["mlflow", "ui", "--host", "0.0.0.0", "--backend-store-uri", "/app/mlruns", "--default-artifact-root", "/app/mlruns"]
+# Définir les variables d'environnement
+ENV MLFLOW_SERVE_ARTIFACTS=true
+ENV MLFLOW_ENABLE_CORS=true
+
+# Lancer le serveur MLflow
+CMD ["mlflow", "server", \
+     "--host", "0.0.0.0", \
+     "--port", "5000", \
+     "--backend-store-uri", "sqlite:///mlflow.db", \
+     "--default-artifact-root", "/app/mlruns", \
+     "--serve-artifacts", \
+     "--gunicorn-opts", "--timeout 120"]

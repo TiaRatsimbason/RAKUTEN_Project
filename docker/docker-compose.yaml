@@ -37,8 +37,8 @@ services:
       - "8000:8000"
     environment:
       MONGODB_URI: mongodb://admin:motdepasseadmin@mongo:27017/
-      MLFLOW_TRACKING_URI: http://mlflow-ui:5123
-      MLFLOW_ARTIFACT_URI: /app/mlruns
+      MLFLOW_TRACKING_URI: http://mlflow-ui:5000
+      MLFLOW_ARTIFACT_ROOT: file:///app/mlruns
     volumes:
       - mlflow-artifacts:/app/mlruns
     depends_on:
@@ -46,7 +46,11 @@ services:
         condition: service_started
       mlflow-ui:
         condition: service_healthy
-    container_name: rakuten-api
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   mlflow-ui:
     build:
@@ -56,16 +60,18 @@ services:
       - "5123:5000"
     environment:
       MONGODB_URI: mongodb://admin:motdepasseadmin@mongo:27017/
-      MLFLOW_TRACKING_URI: http://mlflow-ui:5123
-      MLFLOW_ARTIFACT_URI: /app/mlruns
+      MLFLOW_TRACKING_URI: sqlite:///mlflow.db
+      DEFAULT_ARTIFACT_ROOT: /app/mlruns
     volumes:
       - mlflow-artifacts:/app/mlruns
+      - mlflow-db:/app
     container_name: mlflow-ui
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:5000/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
+      start_period: 40s
 
   airflow-init:
     build:
@@ -77,7 +83,7 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
     volumes:
       - ./dags:/opt/airflow/dags
-      - ./logs:/opt/airflow/logs
+      - airflow_logs:/opt/airflow/logs
       - ./plugins:/opt/airflow/plugins
     entrypoint: ["airflow", "db", "init"]
     depends_on:
@@ -97,7 +103,7 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
     volumes:
       - ./dags:/opt/airflow/dags
-      - ./logs:/opt/airflow/logs
+      - airflow_logs:/opt/airflow/logs
       - ./plugins:/opt/airflow/plugins
     command: ["webserver"]
     depends_on:
@@ -120,7 +126,7 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
     volumes:
       - ./dags:/opt/airflow/dags
-      - ./logs:/opt/airflow/logs
+      - airflow_logs:/opt/airflow/logs
       - ./plugins:/opt/airflow/plugins
     command: ["scheduler"]
     depends_on:
@@ -163,9 +169,10 @@ services:
 
 volumes:
   mongo_database-dev:
-  mlflow-artifacts:  # Volume séparé pour les artefacts MLflow
+  mlflow-artifacts: # Volume séparé pour les artéfacts MLflow
+  mlflow-db:  # Nouveau volume pour MLflow
   postgres_database:
   grafana-storage:
   grafana-logs:
     driver: local
-
+  airflow_logs:

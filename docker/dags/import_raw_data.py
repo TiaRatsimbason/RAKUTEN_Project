@@ -3,6 +3,7 @@ import os
 import logging
 from check_structure import check_existing_file, check_existing_folder
 
+logger = logging.getLogger(__name__)
 
 def import_raw_data(raw_data_relative_path, filenames, bucket_folder_url):
     """import filenames from bucket_folder_url in raw_data_relative_path"""
@@ -64,7 +65,7 @@ def main(
 ):
     """Upload data from AWS s3 in ./data/raw"""
     import_raw_data(raw_data_relative_path, filenames, bucket_folder_url)
-    logger = logging.getLogger(__name__)
+    
     logger.info("making raw data set")
 
 

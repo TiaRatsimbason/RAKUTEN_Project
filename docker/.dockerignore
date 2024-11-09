@@ -7,7 +7,7 @@ __pycache__/
 *.log
 tests/
 node_modules/
-data/
+#data/
 models/
 *.sqlite
 *.db
