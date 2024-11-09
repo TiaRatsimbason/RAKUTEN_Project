@@ -83,6 +83,17 @@ target/
 
 # exclude data from source control by default
 /data/*
+!src/scripts/
+src/scripts/data/*
+!src/scripts/data/mongodb_data_loader.py
+!src/scripts/data/gridfs_image_handler.py
+
+# Supprimer toutes les autres règles data redondantes
+# /data/
+# data/
+# data/raw/
+# data/preprocessed/
+# docker/data/
 
 # Mac OS-specific storage files
 .DS_Store
@@ -103,19 +114,6 @@ target/
 
 # Continue VS Code extension
 .continueignore
-
-# Data folders
-/data/*
-!src/
-src/scripts/data/*
-!src/scripts/data/mongodb_data_loader.py
-!src/scripts/data/gridfs_image_handler.py
-
-# Supprimer ou commenter les anciennes règles data qui peuvent entrer en conflit
-# data/
-# data/raw/
-# data/preprocessed/
-# docker/data/
 
 # MLflow specific
 mlruns/
