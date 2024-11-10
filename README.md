@@ -41,33 +41,90 @@ This project is a starting Pack for MLOps projects based on the subject "movie_r
         └── unit
 ---
 
-Once you have downloaded the github repo, open the anaconda powershell on the root of the project and follow those instructions :
+Once you have downloaded the GitHub repository and the data (required before running container) following the instructions below, open a WSL terminal at the root of the project folder and you can run the following commands:
 
-> `conda create -n "Rakuten-project" python==3.10.14` <- It will create your conda environement with python 3.10.14
+> `docker-compose -f docker/docker-compose.yaml build` <- This will build the container images
 
-> `conda activate Rakuten-project` <- It will activate your environment
+> `docker-compose -f docker/docker-compose.yaml --env-file .env.dev up -d` <- This will start the containers
 
-> `conda install pip` <- May be optionnal
+> `docker-compose -f docker/docker-compose.yaml down` <- This will stop the containers
 
-> `python -m pip install -U pip` <- Upgrade to the latest available version of pip
+> `docker-compose -f docker/docker-compose.yaml down -v` <- This will erase the volumes
 
 | Environnement Windows | Environnement MacOS ou Linux |
 |:----------------------|:-----------------------------|
 | `pip install -r requirements_win.txt` | `pip install -r requirements_linux_macos.txt` |
 | ↳ Installe les packages requis | ↳ Installe les packages requis |
 
-> `python src/scripts/data/import_raw_data.py` <- It will import the tabular data on data/raw/
 
-> Upload the image data folder set directly on local from https://challengedata.ens.fr/participants/challenges/35/, you should save the folders image_train and image_test respecting the following structure
+> Download the data folder from Google Drive (https://drive.google.com/drive/home?hl=fr-FR) using these credentials:
+>  * Email: projetmlops@gmail.com
+>  * Password: MLOps@Rakuten
+>  
+>  The data folder is located in 'My Drive/MLOps_Rakuten_data/'
+> 
+>  You need to place the content in the '~/juin24cmlops_rakuten_2/data/preprocessed' folder
 
-    ├── data
-    │   └── raw
-    |   |  ├── image_train
-    |   |  ├── image_test
+    data
+    └── preprocessed
+        ├── image_test
+        ├── image_train
+        ├── X_test_update.csv
+        ├── X_train_update.csv
+        └── Y_train_CvvW08PX.csv
+---
 
-> `python src/scripts/data/make_dataset.py data/raw data/preprocessed` <- It will copy the raw dataset and paste it on data/preprocessed/
+> `[http://localhost:8000/docs]` <- You can access the FastAPI documentation at this address once all containers are available and healthy (except for airflow-init)
+>
+> `[http://localhost:8081/db/rakuten_db/]` <- You can take a look at the content of the database by going to this address and using these credentials: admin:pass
+>
+> `[http://localhost:5000/]` <- You can take a look at the different training experiments and model versions in the MLflow UI by accessing this URL
+>
+> Regarding workflow automation, there is Airflow, but to access the web client, you need to create a user with the admin role. Therefore, you need to be able to execute a command in the Airflow container. To do this, you need to execute this command in the WSL terminal: `docker exec -it airflow bash` and then on the command line that opens, you need to enter:
+> 
+    `airflow users create 
+    --username airflow 
+    --firstname airflow 
+    --lastname airflow 
+    --role Admin 
+    --email user@airflow.fr 
+    --password essai@airflow`
+>
+> which will give you the credentials to log in into Airflow UI: `airflow:essai@airflow`
+>
+> `[http://localhost:8080/]` <- You can access the Airflow UI  at this address
+>
+## API ENDPOINTS
 
-> `python src/scripts/main.py` <- It will train the models on the dataset and save them in models. By default, the number of epochs = 1
+### 1. /load-data/
+* Checks for required files existence.
+* Loads data using MongoDBDataLoader (src\scripts\data\mongodb_data_loader.py).
+* Saves status in the data_pipeline collection on rakuten_db.
+
+### 2. /data-status/
+* Verifies required collections existence.
+* Counts number of documents in each collection.
+* Checks for images presence in GridFS.
+
+### 3. /prepare-data/
+* Performs data preprocessing.
+* Splits data into training, validation and test sets.
+* Processes images and stores them in GridFS with appropriate metadata (rakuten_db - pipeline_metadata).
+* Saves labeled data in MongoDB.
+
+### 4. /train-model/
+* Calls train_and_save_model() function from src.scripts.main (rakuten_db - model_metadata).
+
+### 5. /predict/
+* Loads test data from MongoDB.
+* Loads predictor and performs predictions.
+* Saves predictions in MongoDB (rakuten_db - predictions collection).
+
+### 6. /evaluate-model/
+* Loads labeled test data.
+* Makes predictions on this data.
+* Calculates evaluation metrics.
+* Saves results in MongoDB (rakuten_db - model_evaluation).
 
 > `python src/scripts/predict.py` <- It will use the trained models to make a prediction (of the prdtypecode) on the desired data, by default, it will predict on the train. You can pass the path to data and images as arguments if you want to change it
 

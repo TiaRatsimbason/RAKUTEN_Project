@@ -10,8 +10,10 @@ RUN apt-get update && \
         build-essential \
         pandoc \
         pkg-config \
-        libhdf5-serial-dev && \
-    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
+        libhdf5-serial-dev \
+        git \
+        curl \
+        && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
 # Copier seulement les fichiers nécessaires à l'installation des dépendances
 COPY pyproject.toml poetry.lock* ./
@@ -23,6 +25,17 @@ RUN python -m pip install --upgrade pip && \
     poetry config virtualenvs.create false && \
     poetry install --no-interaction --no-ansi && \
     rm -rf ~/.cache/pip
+    
+# Créer les répertoires nécessaires
+RUN mkdir -p /app/models /app/mlruns /app/data/preprocessed/image_train /app/data/preprocessed/image_test /app/logs
+
+# Copier le reste du code de l’application
+#COPY src/ /app/src/
+#COPY models/* /app/models/
+#COPY data/container/*.csv /app/data/preprocessed/
+#COPY data/container/image_train/* /app/data/preprocessed/image_train/
+#COPY data/container/image_test/* /app/data/preprocessed/image_test/
+
 
 # Copier le reste du code de l’application
 COPY src/ /app/src/
@@ -30,7 +43,7 @@ COPY models /app/models/
 COPY data/preprocessed/ /app/data/preprocessed/
 
 # Télécharger les ressources NLTK nécessaires
-RUN python -m nltk.downloader punkt_tab
+RUN python -c "import nltk; nltk.download('punkt_tab'); nltk.download('stopwords'); nltk.download('wordnet')"
 
 # Exposer le port 8000
 EXPOSE 8000
@@ -40,3 +53,4 @@ ENV PYTHONPATH="/app:${PYTHONPATH}"
 
 # Command to run the FastAPI server
 CMD ["poetry", "run", "uvicorn", "src.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+

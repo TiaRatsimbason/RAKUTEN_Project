@@ -1,2 +1,15 @@
 airflow/logs/*
 airflow/logs/scheduler/latest
+.git
+__pycache__/
+*.pyc
+*.pyo
+*.log
+tests/
+node_modules/
+#data/
+models/
+*.sqlite
+*.db
+*.tar.gz
+*.zip

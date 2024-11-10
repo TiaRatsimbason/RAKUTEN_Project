@@ -2,7 +2,6 @@ import json
 import logging
 import os
 import argparse
-
 import keras
 import mlflow
 import mlflow.pyfunc

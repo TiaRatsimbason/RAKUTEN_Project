@@ -25,7 +25,7 @@ import shutil
 import platform
 import time
 from src.scripts.data.import_raw_data import import_raw_data
-from src.scripts.features.build_features import DataImporter, TextPreprocessor
+from src.scripts.features.build_features import DataImporter, TextPreprocessor, ImagePreprocessor
 from src.scripts.data.check_structure import check_existing_folder, check_existing_file
 from src.scripts.data.setup_data_cloud import create_directory_structure, copy_files_and_folders_from_drive
 from src.config.mongodb import async_db, async_fs, sync_db, sync_client, sync_fs
@@ -57,6 +57,7 @@ router = APIRouter()
 BATCH_SIZE = 1000
 MAX_WORKERS = os.cpu_count()
 CHUNK_SIZE = 5000
+NUM_CLASSES = 27
 
 class DataPipelineMetadata(BaseModel):
     """Modèle Pydantic pour les métadonnées du pipeline"""
@@ -482,7 +483,16 @@ async def prepare_data():
             except Exception as image_error:
                 logger.error(f"Image processing failed: {str(image_error)}")
                 raise
+            # Création des DataFrames avec labels
+            train_data = X_train.assign(label=y_train.values)
+            val_data = X_val.assign(label=y_val.values)
+            test_data = X_test.assign(label=y_test.values)
 
+            # 4. Prétraitement des images
+            image_preprocessor = ImagePreprocessor()
+            image_preprocessor.preprocess_images_in_df(train_data)
+            image_preprocessor.preprocess_images_in_df(val_data)
+            image_preprocessor.preprocess_images_in_df(test_data)
             # 5. Stockage MongoDB
             async def prepare_and_insert_records(data, mappings, collection_name):
                 try:
@@ -778,40 +788,44 @@ async def evaluate_model(version: int = Query(1, description="Version number of 
         try:
             # 3. Calcul des métriques
             logger.info("Computing evaluation metrics...")
-            
+
             # Convertir les prédictions en un tableau numpy
             y_pred = np.array([int(predictions[str(i)]) for i in range(len(X_eval_sample))])
             y_true = y_eval_sample.values
-            
+
             # Vérifier la cohérence des données
             if len(y_pred) != len(y_true):
                 raise ValueError(f"Prediction length mismatch: {len(y_pred)} vs {len(y_true)}")
-                
+
             # Calcul des métriques globales
             metrics = {
                 "precision": float(precision_score(y_true, y_pred, average="macro", zero_division=0)),
                 "recall": float(recall_score(y_true, y_pred, average="macro", zero_division=0)),
                 "f1_score": float(f1_score(y_true, y_pred, average="macro", zero_division=0))
             }
+
+            # Initialiser les métriques par classe avec 0
+            class_metrics = {f"class_{i}_f1": 0.0 for i in range(NUM_CLASSES)}
+
+            # Calculer les métriques pour les classes présentes dans y_true
+            unique_labels = np.unique(y_true)
+            f1_scores = f1_score(y_true, y_pred, average=None, zero_division=0)
             
-            # Calcul des métriques par classe
-            class_metrics = {
-                f"class_{label}_f1": float(score) 
-                for label, score in zip(
-                    np.unique(y_true),
-                    f1_score(y_true, y_pred, average=None, zero_division=0)
-                )
-            }
+            for label, score in zip(unique_labels, f1_scores):
+                class_metrics[f"class_{label}_f1"] = float(score)
+
+            # Ajouter les métriques par classe aux métriques globales
             metrics.update(class_metrics)
-            
+
             logger.info("Metrics computed successfully")
-            
+
         except Exception as metric_error:
             logger.error(f"Metrics calculation error: {metric_error}", exc_info=True)
             raise HTTPException(
                 status_code=500,
                 detail=f"Error calculating metrics: {str(metric_error)}"
             )
+
 
         try:
             # 4. Sauvegarde des résultats dans MongoDB

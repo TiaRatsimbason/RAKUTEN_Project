@@ -106,7 +106,7 @@ class DataImporter:
         # Mélanger l'ensemble de validation
         X_val = X_val.sample(frac=1, random_state=42).reset_index(drop=True)
         y_val = y_val.sample(frac=1, random_state=42).reset_index(drop=True)
-
+        
         logger.info(f"Split completed: Train={len(X_train)}, Val={len(X_val)}, Test={len(X_test)}")
 
         # Réorganiser les images dans GridFS et ajouter gridfs_file_id
