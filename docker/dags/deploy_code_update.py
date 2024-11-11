@@ -4,8 +4,8 @@ from airflow.operators.bash import BashOperator
 from airflow.operators.python import BranchPythonOperator
 from airflow.operators.dummy import DummyOperator
 from datetime import datetime, timedelta
-import requests
 import os
+import subprocess
 
 default_args = {
     'owner': 'user',
@@ -16,54 +16,43 @@ default_args = {
     'retry_delay': timedelta(minutes=5),
 }
 
-# Définir le jeton et d'autres informations
-GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')  # Utilisez une variable d'environnement pour la sécurité
-REPO_OWNER = "DataScientest-Studio"  # Remplacez par l'utilisateur ou l'organisation du dépôt
-REPO_NAME = "juin24cmlops_rakuten_2"  # Nom du dépôt
-BRANCH = "Dev"  # Branche que vous souhaitez surveiller
+# Chemin vers le dépôt local
+REPO_PATH = "/opt/airflow/repo"  # Chemin où le repo est monté dans le conteneur
 
+# Fonction pour vérifier les mises à jour dans le dépôt local
 def check_for_updates(**kwargs):
-    if not GITHUB_TOKEN:
-        raise ValueError("Le GITHUB_TOKEN n'est pas défini dans l'environnement.")
+    # Récupérer le dernier commit local
+    result = subprocess.run([
+        "git", "-C", REPO_PATH, "rev-parse", "HEAD"
+    ], capture_output=True, text=True)
+    latest_commit_sha = result.stdout.strip()
 
-    url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/branches/{BRANCH}"
-    headers = {
-        "Authorization": f"token {GITHUB_TOKEN}"
-    }
+    # Lire le dernier SHA connu
+    if not os.path.exists('/opt/airflow/last_commit_sha.txt'):
+        with open('/opt/airflow/last_commit_sha.txt', 'w') as f:
+            f.write('')  # Crée le fichier s'il n'existe pas encore
 
-    response = requests.get(url, headers=headers)
+    with open('/opt/airflow/last_commit_sha.txt', 'r+') as f:
+        last_commit_sha = f.read().strip()
 
-    if response.status_code == 200:
-        branch_info = response.json()
-        latest_commit_sha = branch_info['commit']['sha']
+        is_update_needed = last_commit_sha != latest_commit_sha
+        if is_update_needed:
+            # Mettez à jour le fichier avec le nouveau SHA
+            f.seek(0)
+            f.write(latest_commit_sha)
+            f.truncate()
 
-        # Stocker ou comparer avec le dernier commit connu
-        if not os.path.exists('/path/to/last_commit_sha.txt'):
-            with open('/path/to/last_commit_sha.txt', 'w') as f:
-                f.write('')  # Crée le fichier s'il n'existe pas encore
+        return is_update_needed
 
-        with open('/path/to/last_commit_sha.txt', 'r+') as f:
-            last_commit_sha = f.read().strip()
-
-            is_update_needed = last_commit_sha != latest_commit_sha
-            if is_update_needed:
-                # Mettez à jour le fichier avec le nouveau SHA
-                f.seek(0)
-                f.write(latest_commit_sha)
-                f.truncate()
-
-            return is_update_needed
-    else:
-        raise Exception(f"Failed to fetch branch info: {response.status_code}, {response.text}")
-
+# Fonction pour déterminer la branche à suivre
 def branch_check_for_updates(**kwargs):
     if kwargs['task_instance'].xcom_pull(task_ids='check_for_updates'):
         return 'stop_and_remove_containers'
     else:
         return 'no_update_needed'
 
+# Fonction pour vérifier la santé des conteneurs
 def check_containers_health(**kwargs):
-    import subprocess
     result = subprocess.run("docker ps --filter 'status=exited' --format '{{.Names}}'", shell=True, capture_output=True, text=True)
     if result.stdout:
         # Un ou plusieurs conteneurs sont en état 'exited'
@@ -74,12 +63,12 @@ with DAG(
     'deploy_code_update_docker',
     default_args=default_args,
     description='DAG pour déployer automatiquement les mises à jour du code des conteneurs Docker',
-    schedule_interval=timedelta(hours=1),  # exécuter toutes les heures
+    schedule_interval=timedelta(minutes=10),  # exécuter toutes les 10 minutes
     start_date=datetime(2023, 1, 1),
     catchup=False,
 ) as dag:
 
-    # Vérifier les mises à jour dans le dépôt
+    # Vérifier les mises à jour dans le dépôt local
     detect_updates = PythonOperator(
         task_id='check_for_updates',
         python_callable=check_for_updates,
