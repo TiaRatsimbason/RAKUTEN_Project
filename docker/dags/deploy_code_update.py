@@ -1,11 +1,9 @@
 from airflow import DAG
-from airflow.operators.python import PythonOperator
 from airflow.operators.bash import BashOperator
-from airflow.operators.python import BranchPythonOperator
 from airflow.operators.dummy import DummyOperator
 from datetime import datetime, timedelta
 import os
-import subprocess
+
 
 default_args = {
     'owner': 'user',
@@ -16,111 +14,39 @@ default_args = {
     'retry_delay': timedelta(minutes=5),
 }
 
-# Chemin vers le dépôt local
-REPO_PATH = "/opt/airflow/repo"  # Chemin où le repo est monté dans le conteneur
-
-# Fonction pour vérifier les mises à jour dans le dépôt local
-def check_for_updates(**kwargs):
-    # Récupérer le dernier commit local
-    result = subprocess.run([
-        "git", "-C", REPO_PATH, "rev-parse", "HEAD"
-    ], capture_output=True, text=True)
-    latest_commit_sha = result.stdout.strip()
-
-    # Lire le dernier SHA connu
-    if not os.path.exists('/opt/airflow/last_commit_sha.txt'):
-        with open('/opt/airflow/last_commit_sha.txt', 'w') as f:
-            f.write('')  # Crée le fichier s'il n'existe pas encore
-
-    with open('/opt/airflow/last_commit_sha.txt', 'r+') as f:
-        last_commit_sha = f.read().strip()
-
-        is_update_needed = last_commit_sha != latest_commit_sha
-        if is_update_needed:
-            # Mettez à jour le fichier avec le nouveau SHA
-            f.seek(0)
-            f.write(latest_commit_sha)
-            f.truncate()
-
-        return is_update_needed
-
-# Fonction pour déterminer la branche à suivre
-def branch_check_for_updates(**kwargs):
-    if kwargs['task_instance'].xcom_pull(task_ids='check_for_updates'):
-        return 'stop_and_remove_containers'
-    else:
-        return 'no_update_needed'
-
-# Fonction pour vérifier la santé des conteneurs
-def check_containers_health(**kwargs):
-    result = subprocess.run("docker ps --filter 'status=exited' --format '{{.Names}}'", shell=True, capture_output=True, text=True)
-    if result.stdout:
-        # Un ou plusieurs conteneurs sont en état 'exited'
-        return 'rollback_to_previous_version'
-    return 'deployment_successful'
+# Définir le chemin vers docker-compose.yaml
+DOCKER_COMPOSE_PATH = os.getenv('DOCKER_COMPOSE_PATH', '/docker/docker-compose.yaml')
 
 with DAG(
     'deploy_code_update_docker',
     default_args=default_args,
     description='DAG pour déployer automatiquement les mises à jour du code des conteneurs Docker',
-    schedule_interval=timedelta(minutes=10),  # exécuter toutes les 10 minutes
+    schedule_interval=None,  # Le DAG est déclenché manuellement par watchmedo
     start_date=datetime(2023, 1, 1),
     catchup=False,
 ) as dag:
 
-    # Vérifier les mises à jour dans le dépôt local
-    detect_updates = PythonOperator(
-        task_id='check_for_updates',
-        python_callable=check_for_updates,
-        provide_context=True
+    # Arrêter le conteneur existant
+    stop_container = BashOperator(
+        task_id='stop_container',
+        bash_command=f'docker-compose -f {DOCKER_COMPOSE_PATH} stop api'
     )
 
-    # Brancher la logique pour déterminer si une mise à jour est nécessaire
-    branch_task = BranchPythonOperator(
-        task_id='branch_check_for_updates',
-        python_callable=branch_check_for_updates,
-        provide_context=True
+    # Supprimer le conteneur existant
+    remove_container = BashOperator(
+        task_id='remove_container',
+        bash_command=f'docker-compose -f {DOCKER_COMPOSE_PATH} rm -f api'
     )
 
-    # Tâche pour quand aucune mise à jour n'est nécessaire
-    no_update_needed = DummyOperator(task_id='no_update_needed')
-
-    # Arrêter et supprimer les conteneurs existants
-    stop_and_remove_containers = BashOperator(
-        task_id='stop_and_remove_containers',
-        bash_command='docker-compose -f docker/docker-compose.yaml down'
-    )
-
-    # Construire les images Docker
-    build_images = BashOperator(
-        task_id='build_docker_images',
-        bash_command='docker-compose -f docker/docker-compose.yaml build'
-    )
-
-    # Démarrer les conteneurs en environnement de développement
-    start_containers = BashOperator(
+    # Démarrer le conteneur en environnement de développement
+    start_container = BashOperator(
         task_id='start_containers_dev',
-        bash_command='docker-compose -f docker/docker-compose.yaml --env-file .env.dev up -d'
+        bash_command=f'docker-compose -f {DOCKER_COMPOSE_PATH} --env-file /docker/.env.dev up -d --no-deps api'
     )
 
-    # Vérifier la santé des conteneurs (sauf airflow-init)
-    check_health = PythonOperator(
-        task_id='check_containers_health',
-        python_callable=check_containers_health,
-        provide_context=True
-    )
-
-    # Tâche pour rollback si un conteneur est en état 'exited'
-    rollback_to_previous_version = BashOperator(
-        task_id='rollback_to_previous_version',
-        bash_command='docker-compose -f docker/docker-compose.yaml down && git checkout HEAD~1 && docker-compose -f docker/docker-compose.yaml build && docker-compose -f docker/docker-compose.yaml --env-file .env.dev up -d'
-    )
 
     # Tâche indiquant un déploiement réussi
     deployment_successful = DummyOperator(task_id='deployment_successful')
 
     # Définir les dépendances mises à jour
-    detect_updates >> branch_task
-    branch_task >> [stop_and_remove_containers, no_update_needed]
-    stop_and_remove_containers >> build_images >> start_containers >> check_health
-    check_health >> [rollback_to_previous_version, deployment_successful]
+    stop_container >> remove_container >> start_container >> deployment_successful
