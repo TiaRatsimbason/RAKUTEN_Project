@@ -89,6 +89,13 @@ target/
 !src/scripts/data/mongodb_data_loader.py
 !src/scripts/data/gridfs_image_handler.py
 
+# Preprocessed data files in docker
+docker/data/preprocessed/*.csv
+docker/data/preprocessed/X_train_update.csv
+docker/data/preprocessed/X_test_update.csv
+docker/data/preprocessed/image_train/
+docker/data/preprocessed/image_test/
+
 # Remove all other data related rules
 
 # Mac OS-specific storage files

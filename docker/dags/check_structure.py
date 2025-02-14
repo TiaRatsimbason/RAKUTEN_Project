@@ -12,7 +12,7 @@ def check_existing_file(file_path):
             else:
                 print("Invalid response. Please enter 'y' or 'n'.")
     else:
-        return True
+        return True 
     
     
 def check_existing_folder(folder_path):
@@ -22,7 +22,7 @@ def check_existing_folder(folder_path):
             response = input(f"{os.path.basename(folder_path)} doesn't exists. Do you want to create it? (y/n): ") 
             if response.lower() == 'y':
                 return True
-            elif response.lower() == 'n':
+            elif response.lower() == 'n': 
                 return False
             else:
                 print("Invalid response. Please enter 'y' or 'n'.")

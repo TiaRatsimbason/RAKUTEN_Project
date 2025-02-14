@@ -23,25 +23,25 @@ with DAG(
     description='DAG pour déployer automatiquement les mises à jour du code des conteneurs Docker',
     schedule_interval=None,  # Le DAG est déclenché manuellement par watchmedo
     start_date=datetime(2023, 1, 1),
-    catchup=False,
+    catchup=False, 
 ) as dag:
 
     # Arrêter le conteneur existant
     stop_container = BashOperator(
         task_id='stop_container',
-        bash_command=f'docker-compose -f {DOCKER_COMPOSE_PATH} stop api'
+        bash_command=f'sudo docker-compose -f {DOCKER_COMPOSE_PATH} stop api'
     )
 
     # Supprimer le conteneur existant
     remove_container = BashOperator(
         task_id='remove_container',
-        bash_command=f'docker-compose -f {DOCKER_COMPOSE_PATH} rm -f api'
+        bash_command=f'sudo docker-compose -f {DOCKER_COMPOSE_PATH} rm -f api'
     )
 
     # Démarrer le conteneur en environnement de développement
     start_container = BashOperator(
         task_id='start_containers_dev',
-        bash_command=f'docker-compose -f {DOCKER_COMPOSE_PATH} --env-file /docker/.env.dev up -d --no-deps api'
+        bash_command=f'sudo docker-compose -f {DOCKER_COMPOSE_PATH} --env-file /docker/.env.dev up -d --no-deps api'
     )
 
 

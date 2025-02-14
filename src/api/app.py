@@ -12,7 +12,7 @@ Instrumentator().instrument(app).expose(app)
 # Include routes
 app.include_router(
     router=model.router, 
-    prefix=f"{API_URL}/model", 
+    prefix=f"{API_URL}/model",
     tags=["model"]
 )
 

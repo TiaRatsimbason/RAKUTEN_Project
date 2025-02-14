@@ -9,6 +9,12 @@ RUN python -m pip install --upgrade pip
 RUN curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose && \
     chmod +x /usr/local/bin/docker-compose
 
+# Étape existante pour ajouter l'utilisateur au groupe Docker
+RUN groupadd docker && usermod -aG docker airflow
+
+# Ajoutez la configuration sudoers pour l'utilisateur airflow
+RUN echo "airflow ALL=(ALL) NOPASSWD: /usr/bin/docker, /usr/local/bin/docker-compose" >> /etc/sudoers
+
 # Passer à l'utilisateur airflow
 USER airflow
 

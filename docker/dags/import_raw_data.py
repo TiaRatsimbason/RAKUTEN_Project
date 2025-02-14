@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 def import_raw_data(raw_data_relative_path, filenames, bucket_folder_url):
     """import filenames from bucket_folder_url in raw_data_relative_path"""
     if check_existing_folder(raw_data_relative_path):
-        os.makedirs(raw_data_relative_path)
+        os.makedirs(raw_data_relative_path) 
     # download all the files
     for filename in filenames:
         input_file = os.path.join(bucket_folder_url, filename)

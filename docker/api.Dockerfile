@@ -23,7 +23,7 @@ COPY pyproject.toml poetry.lock* ./
 RUN python -m pip install --upgrade pip && \
     pip install --no-cache-dir poetry && \
     poetry config virtualenvs.create false && \
-    poetry install --no-interaction --no-ansi && \
+    poetry install --no-interaction --no-ansi --no-root && \
     rm -rf ~/.cache/pip
     
 # Créer les répertoires nécessaires

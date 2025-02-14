@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 @click.command()
 @click.argument('input_filepath', type=click.Path(exists=True))
-@click.argument('output_filepath', type=click.Path())
+@click.argument('output_filepath', type=click.Path()) 
 def main(input_filepath, output_filepath):
     # Vérifiez si le dossier de destination existe déjà
     if os.path.exists(output_filepath):
